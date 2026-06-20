@@ -972,31 +972,61 @@ function parseEvent(ev){
   const home=(c.competitors||[]).find(x=>x.homeAway==='home')||{};
   const away=(c.competitors||[]).find(x=>x.homeAway==='away')||{};
   const grp=(c.altGameNote||'').match(/Group\s+([A-L])/);
+  const reds={};                                    // red cards by team id (defensive: empty if feed omits)
+  (c.details||[]).forEach(d=>{const txt=((d.type&&d.type.text)||'').toLowerCase();
+    if(txt.indexOf('red')!==-1){const id=d.team&&d.team.id;if(id)reds[id]=(reds[id]||0)+1;}});
   const side=cp=>({abbr:cp.team&&cp.team.abbreviation,name:cp.team&&cp.team.displayName,
-    score:cp.score!=null?Number(cp.score):null,sot:espnStat(cp.statistics,'shotsOnTarget')});
+    score:cp.score!=null?Number(cp.score):null,sot:espnStat(cp.statistics,'shotsOnTarget'),
+    redCards:(cp.team&&reds[cp.team.id])||0});
   return {id:ev.id,date:ev.date,group:grp?grp[1]:null,state:t.state,finished:!!t.completed,
     statusDetail:t.shortDetail||t.detail||'',home:side(home),away:side(away)};
 }
+// --- team strength prior (FIFA ranking, June 2026 pre-tournament) ---
+const FIFA_RANK={ARG:1,ESP:2,FRA:3,ENG:4,POR:5,BRA:6,MAR:7,NED:8,BEL:9,GER:10,CRO:11,COL:13,MEX:14,SEN:15,URU:16,USA:17,JPN:18,SUI:19,IRN:20,TUR:22,ECU:23,AUT:24,KOR:25,AUS:27,ALG:28,DZA:28,EGY:29,CAN:30,NOR:31,CIV:33,PAN:34,SWE:38,CZE:40,PAR:41,SCO:42,TUN:45,COD:46,DRC:46,UZB:50,QAT:56,IRQ:57,RSA:60,SAF:60,KSA:61,JOR:63,BIH:64,CPV:67,GHA:73,CUW:82,HAI:83,NZL:85};
+const STR_REF=38,STR_BETA=0.42,STR_LNSCALE=1.5;
+function strengthPriors(abbr,leagueAvg){
+  const rank=FIFA_RANK[abbr]||STR_REF;
+  const s=(Math.log(STR_REF)-Math.log(rank))/STR_LNSCALE;     // >0 = stronger than average
+  return {attack:leagueAvg*Math.exp(STR_BETA*s), defense:leagueAvg*Math.exp(-STR_BETA*s)};
+}
+// opponent-adjusted form, regressed toward each team's strength prior
 function buildForm(games){
-  const fin=games.filter(g=>g.finished);const A={};let tg=0,ts=0;
-  const bump=(a,gf,ga,sf,sa)=>{const t=(A[a]=A[a]||{games:0,gf:0,ga:0,sf:0,sa:0});t.games++;t.gf+=gf;t.ga+=ga;t.sf+=sf;t.sa+=sa;};
-  fin.forEach(g=>{bump(g.home.abbr,g.home.score,g.away.score,g.home.sot,g.away.sot);
-    bump(g.away.abbr,g.away.score,g.home.score,g.away.sot,g.home.sot);
-    tg+=g.home.score+g.away.score;ts+=g.home.sot+g.away.sot;});
-  const gps=ts>0?tg/ts:0.33,leagueAvg=fin.length?tg/(2*fin.length):1.4,K=1.0,teams={};
-  for(const[a,t]of Object.entries(A)){
-    // goals are the reliable signal (from the score); shots-on-target only lightly
-    // refine, and only when present — otherwise a missing stat would halve the team.
-    let rf=t.gf/t.games, ra=t.ga/t.games;
-    if(t.sf>0&&gps>0) rf=0.75*rf+0.25*((t.sf/t.games)*gps);
-    if(t.sa>0&&gps>0) ra=0.75*ra+0.25*((t.sa/t.games)*gps);
-    const wt=t.games/(t.games+K);
-    teams[a]={games:t.games,xgFor:leagueAvg+(rf-leagueAvg)*wt,xgAgainst:leagueAvg+(ra-leagueAvg)*wt};
-  }
+  const fin=games.filter(g=>g.finished);
+  let tg=0; fin.forEach(g=>tg+=g.home.score+g.away.score);
+  const leagueAvg=fin.length?tg/(2*fin.length):1.4, K=1.0, acc={};
+  const add=(team,opp,gf,ga)=>{const op=strengthPriors(opp,leagueAvg);const a=(acc[team]=acc[team]||{games:0,af:0,aa:0});a.games++;a.af+=gf*(leagueAvg/op.defense);a.aa+=ga*(leagueAvg/op.attack);};
+  fin.forEach(g=>{add(g.home.abbr,g.away.abbr,g.home.score,g.away.score);add(g.away.abbr,g.home.abbr,g.away.score,g.home.score);});
+  const all=new Set();games.forEach(g=>{if(g.home.abbr)all.add(g.home.abbr);if(g.away.abbr)all.add(g.away.abbr);});
+  const teams={};
+  all.forEach(ab=>{const own=strengthPriors(ab,leagueAvg);const a=acc[ab];
+    if(a&&a.games){const w=a.games/(a.games+K);teams[ab]={games:a.games,xgFor:(1-w)*own.attack+w*(a.af/a.games),xgAgainst:(1-w)*own.defense+w*(a.aa/a.games)};}
+    else teams[ab]={games:0,xgFor:own.attack,xgAgainst:own.defense};});
   return {teams,leagueAvg};
 }
 function xgLambda(hf,af,la){const cap=4,cl=x=>Math.min(cap,Math.max(0.05,x));return {lh:cl(hf.xgFor*af.xgAgainst/la*1.1),la:cl(af.xgFor*hf.xgAgainst/la*0.92)};}
 function lambdasFor(g,form){const fb={xgFor:form.leagueAvg,xgAgainst:form.leagueAvg};return xgLambda(form.teams[g.home.abbr]||fb,form.teams[g.away.abbr]||fb,form.leagueAvg);}
+// extra factors, all from free ESPN data: rest/congestion, knockout stage, stakes, red cards
+function contextFactors(g,allGames){
+  let hM=1,aM=1;
+  if(!g.group){hM*=0.90;aM*=0.90;}                         // knockout: tighter, lower-scoring
+  const lastDate=(abbr)=>{let best=null;const gd=new Date(g.date);
+    allGames.forEach(x=>{if(x.finished&&(x.home.abbr===abbr||x.away.abbr===abbr)){const d=new Date(x.date);if(d<gd&&(!best||d>best))best=d;}});return best;};
+  const restMult=(abbr)=>{const ld=lastDate(abbr);if(!ld)return 1;const days=(new Date(g.date)-ld)/86400000;
+    if(days>=5)return 1;if(days<=2)return 0.93;return 0.93+(days-2)*(0.07/3);}; // fatigue if <5 days rest
+  hM*=restMult(g.home.abbr);aM*=restMult(g.away.abbr);
+  const clinched=(abbr)=>{const t=T[abbr];return t&&t.pl===2&&t.p>=6;};         // through already => rotate
+  if(g.group){if(clinched(g.home.abbr))hM*=0.94;if(clinched(g.away.abbr))aM*=0.94;}
+  return {hM,aM};
+}
+function adjustedLambdas(g,form,allGames){
+  let {lh,la}=lambdasFor(g,form);
+  const cx=contextFactors(g,allGames);let hM=cx.hM,aM=cx.aM;
+  const hr=g.home.redCards||0,ar=g.away.redCards||0;                            // a sending-off
+  if(hr){hM*=Math.pow(0.72,hr);aM*=Math.pow(1.12,hr);}
+  if(ar){aM*=Math.pow(0.72,ar);hM*=Math.pow(1.12,ar);}
+  const cl=x=>Math.min(4,Math.max(0.05,x));
+  return {lh:cl(lh*hM),la:cl(la*aM)};
+}
 function minuteFrom(d){if(/HT/i.test(d))return 45;const m=String(d).match(/(\d+)/);return m?Math.min(90,+m[1]):45;}
 function fmtWhen(iso){try{const d=new Date(iso);const day=d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});const tm=d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});return day+' · '+tm;}catch(e){return iso;}}
 
@@ -1019,8 +1049,8 @@ function rebuildLiveData(games,form){
   const nf=[];games.filter(g=>g.finished).forEach(g=>{const{lh,la}=lambdasFor(g,form);nf.push({h:g.home.abbr,a:g.away.abbr,sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3)});});
   if(nf.length){FIN.length=0;nf.forEach(x=>FIN.push(x));}
   LIVE.length=0;
-  games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=lambdasFor(g,form);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
-  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr).slice(0,12).forEach(g=>{const{lh,la}=lambdasFor(g,form);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),p:{h:+(o.home*100).toFixed(1),d:+(o.draw*100).toFixed(1),a:+(o.away*100).toFixed(1)}});});
+  games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
+  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),p:{h:+(o.home*100).toFixed(1),d:+(o.draw*100).toFixed(1),a:+(o.away*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
 }
 function setBanner(kind,fin,live,err){
