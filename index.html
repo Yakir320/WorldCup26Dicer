@@ -1050,7 +1050,7 @@ function rebuildLiveData(games,form){
   if(nf.length){FIN.length=0;nf.forEach(x=>FIN.push(x));}
   LIVE.length=0;
   games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
-  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),p:{h:+(o.home*100).toFixed(1),d:+(o.draw*100).toFixed(1),a:+(o.away*100).toFixed(1)}});});
+  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),p:{h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
 }
 function setBanner(kind,fin,live,err){
