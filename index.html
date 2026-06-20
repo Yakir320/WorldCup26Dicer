@@ -945,6 +945,26 @@ document.getElementById('gReset').addEventListener('click',()=>{GAMMA=1;document
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
 const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=400&dates=20260611-20260719';
+// If direct fetch is CORS-blocked, the app falls through these. Set CUSTOM_PROXY to your
+// own Cloudflare Worker (see worker.js) for a fast, reliable, private proxy.
+const CUSTOM_PROXY=''; // e.g. 'https://wc26.YOURNAME.workers.dev/?url='
+const PROXIES=[
+  u=>u,                                                       // 1) direct (works if ESPN allows CORS)
+  u=>'https://corsproxy.io/?url='+encodeURIComponent(u),      // 2) public proxy
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u), // 3) public proxy
+];
+async function fetchESPN(){
+  const strat=CUSTOM_PROXY?[u=>CUSTOM_PROXY+encodeURIComponent(u),...PROXIES]:PROXIES;
+  for(const wrap of strat){
+    try{
+      const r=await fetch(wrap(ESPN_URL),{cache:'no-store'});
+      if(!r.ok) continue;
+      const j=await r.json();
+      if(j&&Array.isArray(j.events)&&j.events.length) return j;
+    }catch(e){/* try next */}
+  }
+  throw new Error('all sources unreachable');
+}
 function espnStat(arr,name){const s=(arr||[]).find(x=>x.name===name);return s?Number(s.displayValue):0;}
 function parseEvent(ev){
   const c=(ev.competitions&&ev.competitions[0])||{};
@@ -963,9 +983,14 @@ function buildForm(games){
   fin.forEach(g=>{bump(g.home.abbr,g.home.score,g.away.score,g.home.sot,g.away.sot);
     bump(g.away.abbr,g.away.score,g.home.score,g.away.sot,g.home.sot);
     tg+=g.home.score+g.away.score;ts+=g.home.sot+g.away.sot;});
-  const gps=ts>0?tg/ts:0.33,leagueAvg=fin.length?tg/(2*fin.length):1.4,K=2.5,teams={};
+  const gps=ts>0?tg/ts:0.33,leagueAvg=fin.length?tg/(2*fin.length):1.4,K=1.0,teams={};
   for(const[a,t]of Object.entries(A)){
-    const rf=0.5*(t.gf/t.games)+0.5*((t.sf/t.games)*gps),ra=0.5*(t.ga/t.games)+0.5*((t.sa/t.games)*gps),wt=t.games/(t.games+K);
+    // goals are the reliable signal (from the score); shots-on-target only lightly
+    // refine, and only when present — otherwise a missing stat would halve the team.
+    let rf=t.gf/t.games, ra=t.ga/t.games;
+    if(t.sf>0&&gps>0) rf=0.75*rf+0.25*((t.sf/t.games)*gps);
+    if(t.sa>0&&gps>0) ra=0.75*ra+0.25*((t.sa/t.games)*gps);
+    const wt=t.games/(t.games+K);
     teams[a]={games:t.games,xgFor:leagueAvg+(rf-leagueAvg)*wt,xgAgainst:leagueAvg+(ra-leagueAvg)*wt};
   }
   return {teams,leagueAvg};
