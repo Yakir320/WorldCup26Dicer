@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0A1715"/>
+  <rect x="56" y="56" width="400" height="400" rx="40" fill="none" stroke="#2FE0AE" stroke-width="10" opacity="0.5"/>
+  <line x1="256" y1="84" x2="256" y2="428" stroke="#2FE0AE" stroke-width="10" opacity="0.55"/>
+  <circle cx="256" cy="256" r="92" fill="none" stroke="#2FE0AE" stroke-width="12"/>
+  <text x="256" y="232" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="800" font-size="120" fill="#FF5C42">26</text>
+  <text x="256" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="58" letter-spacing="4" fill="#ECF2EC">WC</text>
+</svg>

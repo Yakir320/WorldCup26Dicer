@@ -1032,9 +1032,7 @@ function setBanner(kind,fin,live,err){
 async function bootstrapLive(){
   setBanner('loading');
   try{
-    const res=await fetch(ESPN_URL,{cache:'no-store'});
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const data=await res.json();
+    const data=await fetchESPN();
     const games=(data.events||[]).map(parseEvent).filter(g=>g.home.abbr&&g.away.abbr);
     if(!games.length)throw new Error('no games');
     rebuildLiveData(games,buildForm(games));
