@@ -218,6 +218,21 @@
   .p-att{background:rgba(255,92,66,.14);border-color:rgba(255,92,66,.4);color:#ffb3a6}
   .p-def{background:rgba(47,224,174,.12);border-color:rgba(47,224,174,.4);color:var(--mint)}
   .p-pos{background:rgba(242,193,78,.12);border-color:rgba(242,193,78,.4);color:var(--amber)}
+  .inrow{margin-top:14px}
+  .switch{display:flex;align-items:center;gap:11px;cursor:pointer}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch .track{position:relative;width:42px;height:24px;border-radius:20px;background:var(--line);transition:.2s;flex:0 0 auto}
+  .switch .track:after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--dim);transition:.2s}
+  .switch input:checked + .track{background:rgba(47,224,174,.45)}
+  .switch input:checked + .track:after{transform:translateX(18px);background:var(--mint)}
+  .swlbl{font-family:var(--mono);font-size:12px;letter-spacing:.4px;color:var(--ink)}
+  .swlbl .swsub{display:block;font-size:9px;color:var(--dimmer);font-weight:400;letter-spacing:.3px;margin-top:2px}
+  .scoutedit{margin-top:12px;padding:13px;border:1px solid var(--line);border-radius:10px;display:none}
+  .scoutedit.on{display:block}
+  .scoutedit select{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px;font-family:var(--mono);font-size:13px;margin-bottom:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+  .chip{font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:20px;background:rgba(242,193,78,.12);border:1px solid rgba(242,193,78,.4);color:var(--amber);cursor:pointer}
+  .chipnone{font-family:var(--mono);font-size:10px;color:var(--dimmer)}
   /* scoreline matrix */
   .matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.matrix{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -413,6 +428,16 @@
     </div>
     <div class="calcbtns"><button id="sCal" class="cbtn">Calibrate to results</button><button id="sReset" class="cbtn">Reset</button></div>
     <div class="mbnote">ρ tweaks low-score/draw balance · r is Neg-Binom spread (high r ≈ Poisson) · ν is COM-Poisson tightness (ν&gt;1 fits football's clustered scores). <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
+    <div class="shapehd">Model inputs · toggle &amp; override</div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="xgToggle"><span class="track"></span><span class="swlbl">Shot-based xG <b class="swsub" id="xgnote">—</b></span></label></div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="scoutToggle"><span class="track"></span><span class="swlbl">Scout adjustments <b class="swsub">hand-nudge a team (tactics the data can't see)</b></span></label></div>
+    <div class="scoutedit" id="scoutedit">
+      <select id="scoutTeam"></select>
+      <div class="srow"><label>Attack <b class="sval" id="atkv">0</b></label><input type="range" id="atkSlider" min="-3" max="3" value="0"></div>
+      <div class="srow"><label>Defense (higher = tougher) <b class="sval" id="defv">0</b></label><input type="range" id="defSlider" min="-3" max="3" value="0"></div>
+      <div class="chips" id="scoutChips"></div>
+    </div>
+    <div class="mbnote"><b>Shot-based xG</b> rebuilds ratings from shots on target (chance quality) instead of raw goals — it cools lucky scorelines and credits stingy defenses; the note shows whether it lowers log-loss on finished games. <b>Scout adjustments</b> nudge a team's attack/defense by hand for what the model is blind to (a deep block, a key injury). <b class="warn">Each only affects the model while its switch is on</b> — flip off and the numbers revert.</div>
   </div>
 
   <div class="tabbar" role="tablist" aria-label="Sections">
@@ -570,11 +595,15 @@ const MODELS=['poisson','dc','nb','com'];
 let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);}
 function loadSettings(){
   const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
   const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
   const sh=lsGet('wc26.shape',null); if(sh){if(typeof sh.rho==='number')DC_RHO=sh.rho;if(typeof sh.nbr==='number')NB_R=sh.nbr;if(typeof sh.nu==='number')COM_NU=sh.nu;}
+  USE_XG=lsGet('wc26.usexg',false); SCOUT_ON=lsGet('wc26.scouton',false); SCOUT=lsGet('wc26.scout',{})||{};
+  const xt=document.getElementById('xgToggle'); if(xt)xt.checked=USE_XG;
+  const sct=document.getElementById('scoutToggle'); if(sct)sct.checked=SCOUT_ON;
+  const sed=document.getElementById('scoutedit'); if(sed)sed.classList.toggle('on',SCOUT_ON);
   syncShapeUI();
   const mx=Math.max(...MODELS.map(m=>WEIGHTS[m]))||1;
   document.querySelectorAll('#wgrid .wrow').forEach(row=>{const inp=row.querySelector('input');if(inp)inp.value=Math.round(WEIGHTS[row.dataset.m]/mx*100);});
@@ -584,6 +613,7 @@ function loadSettings(){
 // saved pre-match predictions (so Finished shows what was predicted BEFORE the game)
 function savePred(id,lh,la,overwrite){if(!id)return;const m=lsGet('wc26.preds',{});if(m[id]&&!overwrite)return;m[id]={lh:+(+lh).toFixed(4),la:+(+la).toFixed(4)};lsSet('wc26.preds',m);}
 function loadPred(id){const m=lsGet('wc26.preds',{});return (m&&m[id])||null;}
+let USE_XG=false, SCOUT_ON=false, SCOUT={}, LAST_GAMES=[];
 function fact(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
 function comb(n,k){return fact(n)/(fact(k)*fact(n-k));}
 function pois(k,lam){return Math.exp(-lam)*Math.pow(lam,k)/fact(k);}
@@ -1015,6 +1045,11 @@ function calibrateShapes(){
 document.querySelectorAll('#shapegrid input').forEach(inp=>inp.addEventListener('input',setShapesFromSliders));
 document.getElementById('sCal').addEventListener('click',calibrateShapes);
 document.getElementById('sReset').addEventListener('click',()=>{DC_RHO=-0.12;NB_R=14;COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
+document.getElementById('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
+document.getElementById('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);document.getElementById('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
+document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders);
+document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
+document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
 const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=400&dates=20260611-20260719';
@@ -1119,15 +1154,43 @@ function buildForm(games){
   const fin=games.filter(g=>g.finished);
   let tg=0; fin.forEach(g=>tg+=g.home.score+g.away.score);
   const leagueAvg=fin.length?tg/(2*fin.length):1.4, K=1.0, acc={};
+  const sotOf=(g,side)=>{const c=STATCACHE[g.id];let v=c&&c.s&&c.s[g[side].abbr]&&c.s[g[side].abbr].sot;if(v==null||v<=0)v=g[side].sot;return (v&&v>0)?v:null;};
+  let sumG=0,sumS=0;fin.forEach(g=>{const sh=sotOf(g,'home'),sa=sotOf(g,'away');if(sh!=null&&sa!=null){sumG+=g.home.score+g.away.score;sumS+=sh+sa;}});
+  const K_SOT=sumS>0?sumG/sumS:0;
+  const valFor=(g,side)=>{if(USE_XG&&K_SOT>0){const sv=sotOf(g,side);if(sv!=null)return sv*K_SOT;}return g[side].score;};
   const add=(team,opp,gf,ga)=>{const op=strengthPriors(opp,leagueAvg);const a=(acc[team]=acc[team]||{games:0,af:0,aa:0});a.games++;a.af+=gf*(leagueAvg/op.defense);a.aa+=ga*(leagueAvg/op.attack);};
-  fin.forEach(g=>{add(g.home.abbr,g.away.abbr,g.home.score,g.away.score);add(g.away.abbr,g.home.abbr,g.away.score,g.home.score);});
+  fin.forEach(g=>{const hf=valFor(g,'home'),ha=valFor(g,'away');add(g.home.abbr,g.away.abbr,hf,ha);add(g.away.abbr,g.home.abbr,ha,hf);});
   const all=new Set();games.forEach(g=>{if(g.home.abbr)all.add(g.home.abbr);if(g.away.abbr)all.add(g.away.abbr);});
   const teams={};
-  all.forEach(ab=>{const own=strengthPriors(ab,leagueAvg);const a=acc[ab];
-    if(a&&a.games){const w=a.games/(a.games+K);teams[ab]={games:a.games,xgFor:(1-w)*own.attack+w*(a.af/a.games),xgAgainst:(1-w)*own.defense+w*(a.aa/a.games)};}
-    else teams[ab]={games:0,xgFor:own.attack,xgAgainst:own.defense};});
+  all.forEach(ab=>{const own=strengthPriors(ab,leagueAvg);const a=acc[ab];let xf,xa;
+    if(a&&a.games){const w=a.games/(a.games+K);xf=(1-w)*own.attack+w*(a.af/a.games);xa=(1-w)*own.defense+w*(a.aa/a.games);}
+    else{xf=own.attack;xa=own.defense;}
+    if(SCOUT_ON&&SCOUT[ab]){const sc=SCOUT[ab];xf*=(1+(sc.a||0)*0.08);xa*=(1-(sc.d||0)*0.08);}
+    teams[ab]={games:a?a.games:0,xgFor:xf,xgAgainst:xa};});
   return {teams,leagueAvg};
 }
+function recompute(){ if(LAST_GAMES.length){ rebuildLiveData(LAST_GAMES,buildForm(LAST_GAMES)); renderAll(); } }
+function xgValidation(games){
+  const fin=games.filter(g=>g.finished&&g.home.abbr&&g.away.abbr); if(!fin.length)return null;
+  const score=form=>{let ll=0,m=0;fin.forEach(g=>{const{lh,la}=lambdasFor(g,form);const grid=ensembleGrid(lh,la,WEIGHTS);const c=grid.find(x=>x.i===g.home.score&&x.j===g.away.score);if(c&&c.p>0){ll+=-Math.log(c.p);m++;}});return m?ll/m:null;};
+  const sv=USE_XG; USE_XG=false; const a=score(buildForm(games)); USE_XG=true; const b=score(buildForm(games)); USE_XG=sv;
+  return {goals:a,xg:b};
+}
+function updateXgNote(){const el=document.getElementById('xgnote');if(!el)return;const v=xgValidation(LAST_GAMES);
+  if(!v||v.goals==null||v.xg==null){el.textContent='(needs shot data — syncing)';return;}
+  el.textContent='log-loss · goals '+v.goals.toFixed(2)+' vs xG '+v.xg.toFixed(2)+' ('+(v.xg<v.goals?'xG helps':'goals better')+')';}
+function curScoutTeam(){const s=document.getElementById('scoutTeam');return s?s.value:'';}
+function syncScoutSliders(){const ab=curScoutTeam();const sc=SCOUT[ab]||{a:0,d:0};
+  const A=document.getElementById('atkSlider'),D=document.getElementById('defSlider');if(A)A.value=sc.a||0;if(D)D.value=sc.d||0;
+  const av=document.getElementById('atkv'),dv=document.getElementById('defv');if(av)av.textContent=((sc.a||0)>0?'+':'')+(sc.a||0);if(dv)dv.textContent=((sc.d||0)>0?'+':'')+(sc.d||0);}
+function renderScoutChips(){const el=document.getElementById('scoutChips');if(!el)return;const ks=Object.keys(SCOUT);
+  el.innerHTML=ks.length?ks.map(ab=>{const sc=SCOUT[ab];const p=[];if(sc.a)p.push('ATK'+(sc.a>0?'+':'')+sc.a);if(sc.d)p.push('DEF'+(sc.d>0?'+':'')+sc.d);return '<span class="chip" data-ab="'+ab+'">'+ab+' '+p.join(' ')+' \u2715</span>';}).join(''):'<span class="chipnone">no overrides set</span>';
+  el.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{delete SCOUT[c.dataset.ab];lsSet('wc26.scout',SCOUT);syncScoutSliders();renderScoutChips();if(SCOUT_ON)recompute();}));}
+function setScoutFromSliders(){const ab=curScoutTeam();if(!ab)return;const a=+document.getElementById('atkSlider').value,d=+document.getElementById('defSlider').value;
+  if(a===0&&d===0)delete SCOUT[ab];else SCOUT[ab]={a,d};syncScoutSliders();renderScoutChips();lsSet('wc26.scout',SCOUT);if(SCOUT_ON)recompute();}
+function populateScoutTeams(){const sel=document.getElementById('scoutTeam');if(!sel)return;const cur=sel.value;
+  const abs=[...new Set(LAST_GAMES.flatMap(g=>[g.home.abbr,g.away.abbr]).filter(Boolean))].sort();
+  sel.innerHTML=abs.map(ab=>'<option value="'+ab+'">'+ab+'</option>').join('');if(cur&&abs.includes(cur))sel.value=cur;syncScoutSliders();}
 const HOSTS={USA:1,MEX:1,CAN:1};
 function xgLambda(hf,af,la,ha){ha=ha||1;const cap=4,cl=x=>Math.min(cap,Math.max(0.05,x));return {lh:cl(hf.xgFor*af.xgAgainst/la*ha),la:cl(af.xgFor*hf.xgAgainst/la/ha)};}
 function lambdasFor(g,form){const fb={xgFor:form.leagueAvg,xgAgainst:form.leagueAvg};const ha=(!g.neutral&&HOSTS[g.home.abbr])?1.06:1.0;return xgLambda(form.teams[g.home.abbr]||fb,form.teams[g.away.abbr]||fb,form.leagueAvg,ha);}
@@ -1193,12 +1256,14 @@ async function bootstrapLive(){
     const data=await fetchESPN();
     games=(data.events||[]).map(parseEvent).filter(g=>g.home.abbr&&g.away.abbr);
     if(!games.length)throw new Error('no games');
+    LAST_GAMES=games;
     rebuildLiveData(games,buildForm(games));
     setBanner('live',games.filter(g=>g.finished).length,games.filter(g=>g.state==='in').length);
   }catch(e){ setBanner('snapshot',0,0,e); }
   active=0;
   renderLive();renderTickets();renderDossier();renderFinished();renderReport();syncWeightLabels();
-  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);if(ch)renderDossier();}catch(e){}}
+  populateScoutTeams();renderScoutChips();updateXgNote();
+  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);if(USE_XG)rebuildLiveData(games,buildForm(games));if(ch||USE_XG){renderLive();renderDossier();renderFinished();renderReport();}updateXgNote();}catch(e){}}
 }
 
 loadSettings();
