@@ -193,18 +193,25 @@
   .gleft input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--mint);cursor:pointer;border:2px solid var(--bg2)}
   @media (max-width:680px){ .wgrid{grid-template-columns:1fr 1fr} .wrow .wval{margin-top:0;align-self:flex-start} .wrow label{justify-content:flex-start} }
 
+  .shapehd{font-family:var(--mono);font-size:10px;letter-spacing:1.6px;color:var(--dim);text-transform:uppercase;margin:18px 2px 12px}
+  .shapegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .srow{display:flex;flex-direction:column;gap:7px}
+  .srow label{font-family:var(--mono);font-size:10px;letter-spacing:.5px;color:var(--dim)}
+  .srow label b{color:var(--mint);font-family:var(--display);font-size:14px;margin-left:4px}
+  .srow input{width:100%}
+  @media(max-width:680px){ .shapegrid{grid-template-columns:1fr;gap:12px} }
   /* scoreline matrix */
   .matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  table.matrix{width:100%;border-collapse:separate;border-spacing:0;min-width:560px}
-  table.matrix th,table.matrix td{padding:8px 6px;text-align:center;border:none}
-  table.matrix th{font-family:var(--mono);font-size:9px;letter-spacing:.8px;color:var(--dim);text-transform:uppercase;font-weight:400;border-bottom:1px solid var(--line)}
+  table.matrix{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
+  table.matrix th,table.matrix td{padding:6px 2px;text-align:center;border:none}
+  table.matrix th{font-family:var(--mono);font-size:8px;letter-spacing:.2px;color:var(--dim);text-transform:uppercase;font-weight:400;border-bottom:1px solid var(--line)}
   table.matrix th.ens,table.matrix td.ens{background:rgba(47,224,174,0.06)}
   table.matrix th.ens{color:var(--mint)}
-  .rkh{font-family:var(--mono);font-size:10px;color:var(--dimmer);width:24px}
+  .rkh{font-family:var(--mono);font-size:9px;color:var(--dimmer);width:14px}
   .mcell{position:relative}
-  .mcell .msc{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:.5px;display:block}
+  .mcell .msc{font-family:var(--display);font-weight:700;font-size:12.5px;letter-spacing:.2px;display:block}
   .mcell .msc.h{color:var(--coral)} .mcell .msc.a{color:var(--mint)} .mcell .msc.d{color:var(--amber)}
-  .mcell .mp{font-family:var(--mono);font-size:10px;color:var(--dim);display:block;margin-top:1px}
+  .mcell .mp{font-family:var(--mono);font-size:8px;color:var(--dim);display:block;margin-top:1px}
   .mcell.ens .msc{color:var(--ink)}
   .mcell.won{background:rgba(47,224,174,0.20)!important;border-radius:7px}
   .mcell.won .msc{color:var(--mint)}
@@ -380,6 +387,14 @@
       </div>
     </div>
     <div class="mbnote">γ sharpens (γ&gt;1) or flattens (γ&lt;1) the ensemble's confidence. <b>It recalibrates probabilities only — it never changes which scorelines rank highest.</b> Auto-tune minimises log-loss on the finished games; note the value it finds is <b class="warn">in-sample</b>, so a high γ likely means overfitting.</div>
+    <div class="shapehd">Per-model shape · the "magic numbers"</div>
+    <div class="shapegrid" id="shapegrid">
+      <div class="srow" data-s="rho"><label>Dixon-Coles ρ <b class="sval">-0.12</b></label><input type="range" min="-25" max="25" value="-12"></div>
+      <div class="srow" data-s="nbr"><label>Neg-Binom r <b class="sval">14</b></label><input type="range" min="2" max="60" value="14"></div>
+      <div class="srow" data-s="nu"><label>COM-Poisson ν <b class="sval">1.40</b></label><input type="range" min="60" max="200" value="140"></div>
+    </div>
+    <div class="calcbtns"><button id="sCal" class="cbtn">Calibrate to results</button><button id="sReset" class="cbtn">Reset</button></div>
+    <div class="mbnote">ρ tweaks low-score/draw balance · r is Neg-Binom spread (high r ≈ Poisson) · ν is COM-Poisson tightness (ν&gt;1 fits football's clustered scores). <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
   </div>
 
   <div class="tabbar" role="tablist" aria-label="Sections">
@@ -532,9 +547,25 @@ function keyRead(h,a,th,ta,p){
 const ord=n=>['','1st','2nd','3rd','4th'][n]||n+'th';
 
 /* ---------- scoreline odds: Poisson · Dixon-Coles · Neg. Binomial · COM-Poisson · Ensemble ---------- */
-const DC_RHO=-0.12, NB_R=8, COM_NU=1.2;
+let DC_RHO=-0.12, NB_R=14, COM_NU=1.4;
 const MODELS=['poisson','dc','nb','com'];
 let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
+function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
+function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});}
+function loadSettings(){
+  const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
+  const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
+  const sh=lsGet('wc26.shape',null); if(sh){if(typeof sh.rho==='number')DC_RHO=sh.rho;if(typeof sh.nbr==='number')NB_R=sh.nbr;if(typeof sh.nu==='number')COM_NU=sh.nu;}
+  syncShapeUI();
+  const mx=Math.max(...MODELS.map(m=>WEIGHTS[m]))||1;
+  document.querySelectorAll('#wgrid .wrow').forEach(row=>{const inp=row.querySelector('input');if(inp)inp.value=Math.round(WEIGHTS[row.dataset.m]/mx*100);});
+  const gs=document.getElementById('gslider'); if(gs)gs.value=Math.round(GAMMA*100);
+  const gv=document.getElementById('gval'); if(gv)gv.textContent=GAMMA.toFixed(2);
+}
+// saved pre-match predictions (so Finished shows what was predicted BEFORE the game)
+function savePred(id,lh,la,overwrite){if(!id)return;const m=lsGet('wc26.preds',{});if(m[id]&&!overwrite)return;m[id]={lh:+(+lh).toFixed(4),la:+(+la).toFixed(4)};lsSet('wc26.preds',m);}
+function loadPred(id){const m=lsGet('wc26.preds',{});return (m&&m[id])||null;}
 function fact(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
 function comb(n,k){return fact(n)/(fact(k)*fact(n-k));}
 function pois(k,lam){return Math.exp(-lam)*Math.pow(lam,k)/fact(k);}
@@ -620,11 +651,11 @@ function accuracyWeights(){
 /* ---------- matrix: top-5 per model + ensemble; green on actual ---------- */
 function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note=''}={}){
   const cols=[
-    {key:'poisson',label:'Poisson',grid:gridFor(lh,la,'poisson')},
-    {key:'dc',label:'Dixon-Coles',grid:gridFor(lh,la,'dc')},
-    {key:'nb',label:'Neg. Binom.',grid:gridFor(lh,la,'nb')},
-    {key:'com',label:'COM-Poisson',grid:gridFor(lh,la,'com')},
-    {key:'ens',label:'Ensemble',grid:ensembleGrid(lh,la,WEIGHTS),ens:true},
+    {key:'poisson',label:'Pois',grid:gridFor(lh,la,'poisson')},
+    {key:'dc',label:'D-C',grid:gridFor(lh,la,'dc')},
+    {key:'nb',label:'NB',grid:gridFor(lh,la,'nb')},
+    {key:'com',label:'COM',grid:gridFor(lh,la,'com')},
+    {key:'ens',label:'Ens',grid:ensembleGrid(lh,la,WEIGHTS),ens:true},
   ];
   const eq=s=>actual&&s.i===actual.i&&s.j===actual.j;
   const hitCls=mode==='final'?'won':mode==='live'?'livenow':'';
@@ -650,10 +681,10 @@ function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note=''}={}){
 }
 
 /* upcoming: fit lambdas from win/draw/win probabilities */
-function scorelines(h,a,p){
-  const{lh,la}=fitLambdas(p.h/100,p.d/100,p.a/100);
+function scorelines(h,a,p,lh,la){
+  if(lh==null||la==null){const fit=fitLambdas(p.h/100,p.d/100,p.a/100);lh=fit.lh;la=fit.la;}
   return scoreMatrix(h,a,lh,la,{mode:'pre',
-    note:`Shared model xG · ${h} ${lh.toFixed(2)} | ${a} ${la.toFixed(2)}. Each column ranks its own top-5; COM-Poisson uses ν = 1.2 (mild underdispersion). Ensemble = weighted blend (set weights above).`});
+    note:`Shared model xG · ${h} ${lh.toFixed(2)} | ${a} ${la.toFixed(2)}. Each column ranks its own top-5; COM-Poisson uses ν = ${COM_NU.toFixed(2)} (underdispersion). Ensemble = weighted blend (set weights above).`});
 }
 
 /* live / in-progress games — pre-match model (no team-specific data yet for these sides) */
@@ -683,11 +714,11 @@ function ensRemain(ch,ca,rlh,rla,w){
 function inplayMatrix(m){
   const frac=Math.max(0,(90-m.min)/90), rlh=m.lh*frac, rla=m.la*frac;
   const cols=[
-    {label:'Poisson',grid:remainGrid('poisson',m.sh,m.sa,rlh,rla)},
-    {label:'Dixon-Coles',grid:remainGrid('dc',m.sh,m.sa,rlh,rla)},
-    {label:'Neg. Binom.',grid:remainGrid('nb',m.sh,m.sa,rlh,rla)},
-    {label:'COM-Poisson',grid:remainGrid('com',m.sh,m.sa,rlh,rla)},
-    {label:'Ensemble',grid:ensRemain(m.sh,m.sa,rlh,rla,WEIGHTS),ens:true},
+    {label:'Pois',grid:remainGrid('poisson',m.sh,m.sa,rlh,rla)},
+    {label:'D-C',grid:remainGrid('dc',m.sh,m.sa,rlh,rla)},
+    {label:'NB',grid:remainGrid('nb',m.sh,m.sa,rlh,rla)},
+    {label:'COM',grid:remainGrid('com',m.sh,m.sa,rlh,rla)},
+    {label:'Ens',grid:ensRemain(m.sh,m.sa,rlh,rla,WEIGHTS),ens:true},
   ];
   const isCur=s=>s.i===m.sh&&s.j===m.sa;
   let head=`<tr><th class="rkh">#</th>${cols.map(c=>`<th class="${c.ens?'ens':''}">${c.label}</th>`).join('')}</tr>`;
@@ -741,7 +772,7 @@ function renderFinished(){
         <span class="finscore"><b class="h">${m.h}</b> ${m.sh}<i>–</i>${m.sa} <b class="a">${m.a}</b></span>
       </div>
       ${scoreMatrix(m.h,m.a,m.lh,m.la,{actual:{i:m.sh,j:m.sa},mode:'final',
-        note:`Shared model xG · ${m.h} ${m.lh.toFixed(2)} | ${m.a} ${m.la.toFixed(2)}`})}
+        note:`Shared model xG · ${m.h} ${m.lh.toFixed(2)} | ${m.a} ${m.la.toFixed(2)}${m.predicted?' · saved pre-match prediction':''}`})}
     </div>`;
   }).join('');
   c.innerHTML=`<div class="seltitle">Finished games · model vs reality <span style="color:var(--mint)">— green = what actually happened</span></div>
@@ -905,7 +936,7 @@ function renderDossier(){
 
     <div class="mod full sc">
       <div class="modh">Most likely scorelines · top 5</div>
-      ${scorelines(f.h,f.a,p)}
+      ${scorelines(f.h,f.a,p,f.lh,f.la)}
     </div>
   </div>`;
   const d=document.getElementById('dossier');
@@ -926,7 +957,7 @@ function syncWeightLabels(){
 function setWeightsFromSliders(){
   document.querySelectorAll('#wgrid .wrow').forEach(row=>{ WEIGHTS[row.dataset.m]=+row.querySelector('input').value; });
   if(MODELS.reduce((a,m)=>a+WEIGHTS[m],0)===0) MODELS.forEach(m=>WEIGHTS[m]=1);
-  syncWeightLabels(); renderAll();
+  syncWeightLabels(); renderAll(); saveSettings();
 }
 function applyWeights(w){
   WEIGHTS={...w};
@@ -934,14 +965,33 @@ function applyWeights(w){
   document.querySelectorAll('#wgrid .wrow').forEach(row=>{
     row.querySelector('input').value=Math.round(WEIGHTS[row.dataset.m]/mx*100);
   });
-  syncWeightLabels(); renderAll();
+  syncWeightLabels(); renderAll(); saveSettings();
 }
 document.querySelectorAll('#wgrid input').forEach(inp=>inp.addEventListener('input',setWeightsFromSliders));
 document.getElementById('wEqual').addEventListener('click',()=>applyWeights({poisson:1,dc:1,nb:1,com:1}));
 document.getElementById('wAuto').addEventListener('click',()=>applyWeights(accuracyWeights()));
-document.getElementById('gslider').addEventListener('input',e=>{GAMMA=+e.target.value/100;document.getElementById('gval').textContent=GAMMA.toFixed(2);renderAll();});
-document.getElementById('gTune').addEventListener('click',()=>{const g=tuneGamma();GAMMA=g;document.getElementById('gslider').value=Math.round(g*100);document.getElementById('gval').textContent=g.toFixed(2);renderAll();});
-document.getElementById('gReset').addEventListener('click',()=>{GAMMA=1;document.getElementById('gslider').value=100;document.getElementById('gval').textContent='1.00';renderAll();});
+document.getElementById('gslider').addEventListener('input',e=>{GAMMA=+e.target.value/100;document.getElementById('gval').textContent=GAMMA.toFixed(2);renderAll();saveSettings();});
+document.getElementById('gTune').addEventListener('click',()=>{const g=tuneGamma();GAMMA=g;document.getElementById('gslider').value=Math.round(g*100);document.getElementById('gval').textContent=g.toFixed(2);renderAll();saveSettings();});
+document.getElementById('gReset').addEventListener('click',()=>{GAMMA=1;document.getElementById('gslider').value=100;document.getElementById('gval').textContent='1.00';renderAll();saveSettings();});
+function syncShapeUI(){
+  const set=(sel,disp,raw)=>{const row=document.querySelector('.srow[data-s="'+sel+'"]');if(!row)return;row.querySelector('input').value=raw;row.querySelector('.sval').textContent=disp;};
+  set('rho',DC_RHO.toFixed(2),Math.round(DC_RHO*100)); set('nbr',String(NB_R),NB_R); set('nu',COM_NU.toFixed(2),Math.round(COM_NU*100));
+}
+function setShapesFromSliders(){
+  document.querySelectorAll('#shapegrid .srow').forEach(row=>{const v=+row.querySelector('input').value,sk=row.dataset.s;
+    if(sk==='rho')DC_RHO=v/100; else if(sk==='nbr')NB_R=v; else if(sk==='nu')COM_NU=v/100;});
+  syncShapeUI(); renderAll(); saveSettings();
+}
+function shapeLL(model){let ll=0;FIN.forEach(m=>{const g=gridFor(m.lh,m.la,model);const c=g.find(s=>s.i===m.sh&&s.j===m.sa);ll+=-Math.log(c.p);});return ll/FIN.length;}
+function calibrateShapes(){
+  let b={ll:1e9};for(let r=-25;r<=25;r++){DC_RHO=r/100;const ll=shapeLL('dc');if(ll<b.ll)b={v:DC_RHO,ll};}DC_RHO=b.v;
+  b={ll:1e9};[2,3,4,6,8,10,14,20,30,50].forEach(r=>{NB_R=r;const ll=shapeLL('nb');if(ll<b.ll)b={v:r,ll};});NB_R=b.v;
+  b={ll:1e9};for(let v=60;v<=200;v+=5){COM_NU=v/100;const ll=shapeLL('com');if(ll<b.ll)b={v:COM_NU,ll};}COM_NU=b.v;
+  syncShapeUI(); renderAll(); saveSettings();
+}
+document.querySelectorAll('#shapegrid input').forEach(inp=>inp.addEventListener('input',setShapesFromSliders));
+document.getElementById('sCal').addEventListener('click',calibrateShapes);
+document.getElementById('sReset').addEventListener('click',()=>{DC_RHO=-0.12;NB_R=14;COM_NU=1.4;syncShapeUI();renderAll();saveSettings();});
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
 const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=400&dates=20260611-20260719';
@@ -1046,11 +1096,11 @@ function rebuildLiveData(games,form){
       arr.forEach(([ab,a],i)=>{T[ab]={n:a.n,g:grp,rk:i+1,w:a.w,d:a.d,l:a.l,p:a.w*3+a.d,pl:a.w+a.d+a.l};});
     });
   }
-  const nf=[];games.filter(g=>g.finished).forEach(g=>{const{lh,la}=lambdasFor(g,form);nf.push({h:g.home.abbr,a:g.away.abbr,sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3)});});
+  const nf=[];games.filter(g=>g.finished).forEach(g=>{const sp=loadPred(g.id);const L=sp||lambdasFor(g,form);nf.push({h:g.home.abbr,a:g.away.abbr,sh:g.home.score,sa:g.away.score,lh:+(+L.lh).toFixed(3),la:+(+L.la).toFixed(3),predicted:!!sp});});
   if(nf.length){FIN.length=0;nf.forEach(x=>FIN.push(x));}
   LIVE.length=0;
-  games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
-  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),p:{h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)}});});
+  games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
+  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),p:{h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
 }
 function setBanner(kind,fin,live,err){
@@ -1072,6 +1122,7 @@ async function bootstrapLive(){
   renderLive();renderTickets();renderDossier();renderFinished();renderReport();syncWeightLabels();
 }
 
+loadSettings();
 renderLive();
 renderTickets();
 renderDossier();
