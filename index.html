@@ -233,6 +233,9 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
   .chip{font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:20px;background:rgba(242,193,78,.12);border:1px solid rgba(242,193,78,.4);color:var(--amber);cursor:pointer}
   .chipnone{font-family:var(--mono);font-size:10px;color:var(--dimmer)}
+  .mktline{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--ink);padding-top:9px;border-top:1px solid var(--line)}
+  .mktline b{color:var(--amber)}
+  .mktline .mktw{color:var(--dimmer);font-size:9px}
   /* scoreline matrix */
   .matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.matrix{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -437,6 +440,7 @@
       <div class="srow"><label>Defense (higher = tougher) <b class="sval" id="defv">0</b></label><input type="range" id="defSlider" min="-3" max="3" value="0"></div>
       <div class="chips" id="scoutChips"></div>
     </div>
+    <div class="inrow"><label>Market weight <b class="sval" id="mktv">50%</b> <span class="swsub" id="mktnote">— paste an odds API key in the code to activate</span></label><input type="range" id="mktSlider" min="0" max="100" value="50"></div>
     <div class="mbnote"><b>Shot-based xG</b> rebuilds ratings from shots on target (chance quality) instead of raw goals — it cools lucky scorelines and credits stingy defenses; the note shows whether it lowers log-loss on finished games. <b>Scout adjustments</b> nudge a team's attack/defense by hand for what the model is blind to (a deep block, a key injury). <b class="warn">Each only affects the model while its switch is on</b> — flip off and the numbers revert.</div>
   </div>
 
@@ -595,7 +599,7 @@ const MODELS=['poisson','dc','nb','com'];
 let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.mktw',MKT_W);}
 function loadSettings(){
   const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
   const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
@@ -604,6 +608,10 @@ function loadSettings(){
   const xt=document.getElementById('xgToggle'); if(xt)xt.checked=USE_XG;
   const sct=document.getElementById('scoutToggle'); if(sct)sct.checked=SCOUT_ON;
   const sed=document.getElementById('scoutedit'); if(sed)sed.classList.toggle('on',SCOUT_ON);
+  MKT_W=lsGet('wc26.mktw',0.5);
+  const ms2=document.getElementById('mktSlider'); if(ms2)ms2.value=Math.round(MKT_W*100);
+  const mv2=document.getElementById('mktv'); if(mv2)mv2.textContent=Math.round(MKT_W*100)+'%';
+  const mn2=document.getElementById('mktnote'); if(mn2&&ODDS_API_KEY)mn2.textContent='— live odds active';
   syncShapeUI();
   const mx=Math.max(...MODELS.map(m=>WEIGHTS[m]))||1;
   document.querySelectorAll('#wgrid .wrow').forEach(row=>{const inp=row.querySelector('input');if(inp)inp.value=Math.round(WEIGHTS[row.dataset.m]/mx*100);});
@@ -614,6 +622,8 @@ function loadSettings(){
 function savePred(id,lh,la,overwrite){if(!id)return;const m=lsGet('wc26.preds',{});if(m[id]&&!overwrite)return;m[id]={lh:+(+lh).toFixed(4),la:+(+la).toFixed(4)};lsSet('wc26.preds',m);}
 function loadPred(id){const m=lsGet('wc26.preds',{});return (m&&m[id])||null;}
 let USE_XG=false, SCOUT_ON=false, SCOUT={}, LAST_GAMES=[];
+const ODDS_API_KEY='';   // free key from the-odds-api.com -> paste between the quotes to activate market blend
+let MARKET={}, MKT_W=0.5;
 function fact(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
 function comb(n,k){return fact(n)/(fact(k)*fact(n-k));}
 function pois(k,lam){return Math.exp(-lam)*Math.pow(lam,k)/fact(k);}
@@ -831,17 +841,19 @@ function renderFinished(){
 function outcomeProbs(grid){let h=0,d=0,a=0;grid.forEach(c=>{if(c.i>c.j)h+=c.p;else if(c.i===c.j)d+=c.p;else a+=c.p;});return {h,d,a};}
 function actualOutcome(sh,sa){return sh>sa?'H':sa>sh?'A':'D';}
 function modelStats(key){
-  let t1=0,t3=0,t5=0,rk=0,ll=0,oc=0;
+  let t1=0,t3=0,t5=0,rk=0,ll=0,oc=0,ll2=0,br=0;
   FIN.forEach(m=>{
     const g = key==='ens' ? ensembleGrid(m.lh,m.la,WEIGHTS) : gridFor(m.lh,m.la,key);
     const idx=g.findIndex(s=>s.i===m.sh&&s.j===m.sa), rank=idx+1;
     if(rank===1)t1++; if(rank<=3)t3++; if(rank<=5)t5++;
     rk+=rank; ll+=-Math.log(g[idx].p);
     const op=outcomeProbs(g), pred=op.h>=op.d&&op.h>=op.a?'H':op.a>=op.h&&op.a>=op.d?'A':'D';
-    if(pred===actualOutcome(m.sh,m.sa))oc++;
+    const act=actualOutcome(m.sh,m.sa); if(pred===act)oc++;
+    const tot=op.h+op.d+op.a||1, ph=op.h/tot, pd=op.d/tot, pa=op.a/tot, pAct=act==='H'?ph:act==='D'?pd:pa;
+    ll2+=-Math.log(Math.max(pAct,1e-9)); br+=(ph-(act==='H'?1:0))**2+(pd-(act==='D'?1:0))**2+(pa-(act==='A'?1:0))**2;
   });
   const n=FIN.length;
-  return {exact:t1/n,top3:t3/n,top5:t5/n,meanRank:rk/n,logloss:ll/n,outcome:oc/n};
+  return {exact:t1/n,top3:t3/n,top5:t5/n,meanRank:rk/n,logloss:ll/n,outcome:oc/n,ll1x2:ll2/n,brier:br/n};
 }
 function renderReport(){
   const c=document.getElementById('report');
@@ -851,6 +863,8 @@ function renderReport(){
   const bLL=Math.min(...rowsData.map(s=>s[1].logloss)), bRank=Math.min(...rowsData.map(s=>s[1].meanRank));
   const bOut=Math.max(...rowsData.map(s=>s[1].outcome));
   const pct=v=>Math.round(v*100)+'%';
+  const bOut2=Math.max(...rowsData.map(s=>s[1].outcome)),bL2=Math.min(...rowsData.map(s=>s[1].ll1x2)),bBr=Math.min(...rowsData.map(s=>s[1].brier));
+  const orows=rowsData.map(([l,s])=>`<tr><td class="t">${l}</td><td class="${s.outcome===bOut2?'best':''}">${pct(s.outcome)}</td><td class="${s.ll1x2===bL2?'best':''}">${s.ll1x2.toFixed(3)}</td><td class="${s.brier===bBr?'best':''}">${s.brier.toFixed(3)}</td></tr>`).join('');
   const rows=rowsData.map(([l,s])=>`<tr>
     <td class="t">${l}</td>
     <td class="${s.exact===bExact?'best':''}">${pct(s.exact)}</td>
@@ -861,6 +875,9 @@ function renderReport(){
     <td class="${s.outcome===bOut?'best':''}">${pct(s.outcome)}</td></tr>`).join('');
   c.innerHTML=`
     <div class="seltitle">Model report card <span style="color:var(--dim)">— measured on ${FIN.length} finished games</span></div>
+    <div class="ohd">Outcome scoreboard · win / draw / win <span style="color:var(--dim)">— the call you can actually trust</span></div>
+    <div class="matrixwrap"><table class="report"><tr><th>Predictor</th><th>Outcome</th><th>1X2 log-loss</th><th>Brier</th></tr>${orows}</table></div>
+    <div class="rkeyline" style="margin-bottom:18px"><b>Outcome</b> — how often the predicted win/draw/win was right. <b>1X2 log-loss / Brier</b> — quality of the win-draw-win <i>probabilities</i> (lower is better); these are proper scoring rules and the fairest read on the model. This is what to judge it on — not exact scores.</div>
     <div class="verdict">
       <div class="vhead">Can you rely on the exact-score predictions? <b class="no">Not for a single game.</b></div>
       <p>Calling the <b>exact scoreline</b> is intrinsically hard — even elite models land it only about 10–12% of the time. The exact-score column below looks far better than that, but it's <b class="warn">in-sample</b>: the team ratings were fit on these same ${FIN.length} games, so the model has effectively already seen the answers. Out of sample it would drop sharply.</p>
@@ -932,6 +949,7 @@ function renderDossier(){
         <span>Draw <span class="fav">${p.d}%</span></span>
         <span>${f.a} <span class="fav">${p.a}%</span></span>
       </div>
+      ${f.mkt?`<div class="mktline">Market (de-vigged): <b>${(f.mkt.h*100).toFixed(0)}%</b> ${f.h} · <b>${(f.mkt.d*100).toFixed(0)}%</b> draw · <b>${(f.mkt.a*100).toFixed(0)}%</b> ${f.a} <span class="mktw">— bar shows model blended ${Math.round(MKT_W*100)}% toward market</span></div>`:''}
     </div>
   </div>
 
@@ -1050,6 +1068,7 @@ document.getElementById('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.
 document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders);
 document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
 document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
+(function(){const ms=document.getElementById('mktSlider');if(ms)ms.addEventListener('input',e=>{MKT_W=+e.target.value/100;const mv=document.getElementById('mktv');if(mv)mv.textContent=Math.round(MKT_W*100)+'%';lsSet('wc26.mktw',MKT_W);recompute();});})();
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
 const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=400&dates=20260611-20260719';
@@ -1191,6 +1210,22 @@ function setScoutFromSliders(){const ab=curScoutTeam();if(!ab)return;const a=+do
 function populateScoutTeams(){const sel=document.getElementById('scoutTeam');if(!sel)return;const cur=sel.value;
   const abs=[...new Set(LAST_GAMES.flatMap(g=>[g.home.abbr,g.away.abbr]).filter(Boolean))].sort();
   sel.innerHTML=abs.map(ab=>'<option value="'+ab+'">'+ab+'</option>').join('');if(cur&&abs.includes(cur))sel.value=cur;syncScoutSliders();}
+const NAME_ALIAS={drcongo:'COD',congodr:'COD',democraticrepublicofthecongo:'COD',southkorea:'KOR',korearepublic:'KOR',unitedstates:'USA',usa:'USA',ivorycoast:'CIV',cotedivoire:'CIV',czechrepublic:'CZE',czechia:'CZE',iran:'IRN',iriran:'IRN',capeverde:'CPV',caboverde:'CPV',bosniaandherzegovina:'BIH',bosnia:'BIH',curacao:'CUW'};
+function nameToAbbr(name){if(!name)return null;const n=String(name).toLowerCase().replace(/[^a-z]/g,'');if(!n)return null;if(NAME_ALIAS[n]&&T[NAME_ALIAS[n]])return NAME_ALIAS[n];let best=null;for(const ab in T){const tn=(T[ab].n||'').toLowerCase().replace(/[^a-z]/g,'');if(!tn)continue;if(tn===n)return ab;if(tn.includes(n)||n.includes(tn))best=ab;}return best;}
+function deVig(oH,oD,oA){const iH=1/oH,iD=1/oD,iA=1/oA,s=iH+iD+iA;return {h:iH/s,d:iD/s,a:iA/s};}
+function marketKey(h,a){return h+'_'+a;}
+function blendOutcome(model,mkt){if(!mkt)return model;const w=MKT_W;return {h:(1-w)*model.h+w*mkt.h,d:(1-w)*model.d+w*mkt.d,a:(1-w)*model.a+w*mkt.a};}
+async function fetchOdds(){
+  if(!ODDS_API_KEY)return false;
+  const url='https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey='+ODDS_API_KEY;
+  try{const r=await fetch(url);if(!r.ok)return false;const arr=await r.json();if(!Array.isArray(arr))return false;let any=false;
+    arr.forEach(ev=>{const ha=nameToAbbr(ev.home_team),aa=nameToAbbr(ev.away_team);if(!ha||!aa)return;
+      const bk=(ev.bookmakers||[])[0];if(!bk)return;const mk=(bk.markets||[]).find(m=>m.key==='h2h');if(!mk||!mk.outcomes)return;
+      let oH,oD,oA;mk.outcomes.forEach(o=>{if(o.name===ev.home_team)oH=o.price;else if(o.name===ev.away_team)oA=o.price;else oD=o.price;});
+      if(oH&&oD&&oA){MARKET[marketKey(ha,aa)]=deVig(oH,oD,oA);any=true;}});
+    return any;
+  }catch(e){return false;}
+}
 const HOSTS={USA:1,MEX:1,CAN:1};
 function xgLambda(hf,af,la,ha){ha=ha||1;const cap=4,cl=x=>Math.min(cap,Math.max(0.05,x));return {lh:cl(hf.xgFor*af.xgAgainst/la*ha),la:cl(af.xgFor*hf.xgAgainst/la/ha)};}
 function lambdasFor(g,form){const fb={xgFor:form.leagueAvg,xgAgainst:form.leagueAvg};const ha=(!g.neutral&&HOSTS[g.home.abbr])?1.06:1.0;return xgLambda(form.teams[g.home.abbr]||fb,form.teams[g.away.abbr]||fb,form.leagueAvg,ha);}
@@ -1239,7 +1274,7 @@ function rebuildLiveData(games,form){
   if(nf.length){FIN.length=0;nf.forEach(x=>FIN.push(x));}
   LIVE.length=0;
   games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
-  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),p:{h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)}});});
+  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));const mkt=MARKET[marketKey(g.home.abbr,g.away.abbr)]||null;const ob=blendOutcome(o,mkt);nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),mkt:mkt,p:{h:+(ob.h*100).toFixed(1),d:+(ob.d*100).toFixed(1),a:+(ob.a*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
   TEAMSTATS=buildTeamStats(games);
 }
@@ -1263,7 +1298,7 @@ async function bootstrapLive(){
   active=0;
   renderLive();renderTickets();renderDossier();renderFinished();renderReport();syncWeightLabels();
   populateScoutTeams();renderScoutChips();updateXgNote();
-  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);if(USE_XG)rebuildLiveData(games,buildForm(games));if(ch||USE_XG){renderLive();renderDossier();renderFinished();renderReport();}updateXgNote();}catch(e){}}
+  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);const mo=await fetchOdds();if(USE_XG||mo)rebuildLiveData(games,buildForm(games));if(ch||USE_XG||mo){renderLive();renderDossier();renderFinished();renderReport();}updateXgNote();}catch(e){}}
 }
 
 loadSettings();
