@@ -236,6 +236,13 @@
   .mktline{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--ink);padding-top:9px;border-top:1px solid var(--line)}
   .mktline b{color:var(--amber)}
   .mktline .mktw{color:var(--dimmer);font-size:9px}
+  .tactgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .switch.sm{align-items:flex-start}
+  .switch.sm .track{width:34px;height:20px}
+  .switch.sm .track:after{width:14px;height:14px}
+  .switch.sm input:checked + .track:after{transform:translateX(14px)}
+  .switch.sm .swlbl{font-size:10px}
+  @media(max-width:520px){ .tactgrid{grid-template-columns:1fr} }
   /* scoreline matrix */
   .matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.matrix{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -406,12 +413,11 @@
       </div>
     </div>
     <div class="wgrid" id="wgrid">
-      <div class="wrow" data-m="poisson"><label>Poisson</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
-      <div class="wrow" data-m="dc"><label>Dixon-Coles</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
-      <div class="wrow" data-m="nb"><label>Neg. Binomial</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
-      <div class="wrow" data-m="com"><label>COM-Poisson</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
+      <div class="wrow" data-m="com"><label>COM-Poisson</label><input type="range" min="0" max="100" value="55"><span class="wval">55%</span></div>
+      <div class="wrow" data-m="poisson"><label>Poisson</label><input type="range" min="0" max="100" value="30"><span class="wval">30%</span></div>
+      <div class="wrow" data-m="geom"><label>Geometric</label><input type="range" min="0" max="100" value="15"><span class="wval">15%</span></div>
     </div>
-    <div class="mbnote">Our prediction blends all four models by these weights. Adjust to taste, or use <b>By accuracy</b> to weight each by how well it called the finished games.</div>
+    <div class="mbnote">Our prediction blends the three models by these weights (COM dominant, Poisson baseline, Geometric anchors clean sheets). Adjust to taste, or use <b>By accuracy</b> to weight each by how well it called the finished games.</div>
     <div class="gammarow">
       <div class="gleft">
         <label>Sharpness factor γ <b id="gval">1.00</b></label>
@@ -423,16 +429,15 @@
       </div>
     </div>
     <div class="mbnote">γ sharpens (γ&gt;1) or flattens (γ&lt;1) the ensemble's confidence. <b>It recalibrates probabilities only — it never changes which scorelines rank highest.</b> Auto-tune minimises log-loss on the finished games; note the value it finds is <b class="warn">in-sample</b>, so a high γ likely means overfitting.</div>
-    <div class="shapehd">Per-model shape · the "magic numbers"</div>
+    <div class="shapehd">COM-Poisson shape · ν</div>
     <div class="shapegrid" id="shapegrid">
-      <div class="srow" data-s="rho"><label>Dixon-Coles ρ <b class="sval">-0.12</b></label><input type="range" min="-25" max="25" value="-12"></div>
-      <div class="srow" data-s="nbr"><label>Neg-Binom r <b class="sval">14</b></label><input type="range" min="2" max="60" value="14"></div>
       <div class="srow" data-s="nu"><label>COM-Poisson ν <b class="sval">1.00</b></label><input type="range" min="60" max="200" value="100"></div>
     </div>
     <div class="calcbtns"><button id="sCal" class="cbtn">Calibrate to results</button><button id="sReset" class="cbtn">Reset</button></div>
-    <div class="mbnote">ρ tweaks low-score/draw balance · r is Neg-Binom spread (high r ≈ Poisson) · ν is COM-Poisson tightness (ν&gt;1 fits football's clustered scores). <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
+    <div class="mbnote">ν is COM-Poisson tightness — ν&gt;1 = tighter/low-scoring, ν&lt;1 = looser/high-scoring. <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
     <div class="shapehd">Model inputs · toggle &amp; override</div>
     <div class="inrow"><label class="switch"><input type="checkbox" id="xgToggle"><span class="track"></span><span class="swlbl">Shot-based xG <b class="swsub" id="xgnote">—</b></span></label></div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="advToggle"><span class="track"></span><span class="swlbl">Advanced stats tuning <b class="swsub">SOT 60% · conversion 30% · possession 10% → scales λ</b></span></label></div>
     <div class="inrow"><label class="switch"><input type="checkbox" id="scoutToggle"><span class="track"></span><span class="swlbl">Scout adjustments <b class="swsub">hand-nudge a team (tactics the data can't see)</b></span></label></div>
     <div class="scoutedit" id="scoutedit">
       <select id="scoutTeam"></select>
@@ -594,20 +599,22 @@ function keyRead(h,a,th,ta,p){
 const ord=n=>['','1st','2nd','3rd','4th'][n]||n+'th';
 
 /* ---------- scoreline odds: Poisson · Dixon-Coles · Neg. Binomial · COM-Poisson · Ensemble ---------- */
-let DC_RHO=-0.12, NB_R=14, COM_NU=1.0;
-const MODELS=['poisson','dc','nb','com'];
-let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
+let COM_NU=1.0;
+const MODELS=['com','poisson','geom'];
+let WEIGHTS={com:55,poisson:30,geom:15};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.mktw',MKT_W);}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.mktw',MKT_W);lsSet('wc26.advon',ADV_ON);}
 function loadSettings(){
   const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
   const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
-  const sh=lsGet('wc26.shape',null); if(sh){if(typeof sh.rho==='number')DC_RHO=sh.rho;if(typeof sh.nbr==='number')NB_R=sh.nbr;if(typeof sh.nu==='number')COM_NU=sh.nu;}
+  const sh=lsGet('wc26.shape',null); if(sh&&typeof sh.nu==='number')COM_NU=sh.nu;
   USE_XG=lsGet('wc26.usexg',false); SCOUT_ON=lsGet('wc26.scouton',false); SCOUT=lsGet('wc26.scout',{})||{};
   const xt=document.getElementById('xgToggle'); if(xt)xt.checked=USE_XG;
   const sct=document.getElementById('scoutToggle'); if(sct)sct.checked=SCOUT_ON;
   const sed=document.getElementById('scoutedit'); if(sed)sed.classList.toggle('on',SCOUT_ON);
+  ADV_ON=lsGet('wc26.advon',false);
+  const adt=document.getElementById('advToggle'); if(adt)adt.checked=ADV_ON;
   MKT_W=lsGet('wc26.mktw',0.5);
   const ms2=document.getElementById('mktSlider'); if(ms2)ms2.value=Math.round(MKT_W*100);
   const mv2=document.getElementById('mktv'); if(mv2)mv2.textContent=Math.round(MKT_W*100)+'%';
@@ -624,9 +631,11 @@ function loadPred(id){const m=lsGet('wc26.preds',{});return (m&&m[id])||null;}
 let USE_XG=false, SCOUT_ON=false, SCOUT={}, LAST_GAMES=[];
 const ODDS_API_KEY='';   // free key from the-odds-api.com -> paste between the quotes to activate market blend
 let MARKET={}, MKT_W=0.5;
+let ADV_ON=false, TACT={};
 function fact(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
 function comb(n,k){return fact(n)/(fact(k)*fact(n-k));}
 function pois(k,lam){return Math.exp(-lam)*Math.pow(lam,k)/fact(k);}
+function geom(k,mu){const p=1/(1+mu);return p*Math.pow(1-p,k);}
 function nb(k,mu,r){const p=r/(r+mu);return comb(k+r-1,k)*Math.pow(p,r)*Math.pow(1-p,k);}
 function dcTau(i,j,lh,la,rho){
   if(i===0&&j===0)return 1-lh*la*rho;
@@ -653,30 +662,26 @@ function outcomes(lh,la){let ph=0,pd=0,pa=0;for(let i=0;i<12;i++)for(let j=0;j<1
 function fitLambdas(pH,pD,pA){let best=null;for(let lh=0.1;lh<=4;lh+=0.04)for(let la=0.1;la<=4;la+=0.04){const[ph,pd,pa]=outcomes(lh,la);const e=(ph-pH)**2+(pd-pD)**2+(pa-pA)**2;if(!best||e<best.e)best={e,lh,la};}return best;}
 
 /* marginal goal pmf (0..9) for the separable models */
-function marg(mu,model){
+function marg(mu,model,nu){
   const a=[];
-  if(model==='nb'){for(let k=0;k<10;k++)a.push(nb(k,mu,NB_R));}
-  else if(model==='com'){const p=comPmf(comRate(mu,COM_NU),COM_NU);for(let k=0;k<10;k++)a.push(p[k]);}
+  if(model==='geom'){for(let k=0;k<10;k++)a.push(geom(k,mu));}
+  else if(model==='com'){const v=nu||COM_NU;const p=comPmf(comRate(mu,v),v);for(let k=0;k<10;k++)a.push(p[k]);}
   else{for(let k=0;k<10;k++)a.push(pois(k,mu));}
   return a;
 }
 /* full normalized scoreline grid for one model (shared xG, different distribution) */
-function gridFor(lh,la,model){
+function gridFor(lh,la,model,nu){
   const g=[]; let s=0;
-  if(model==='dc'){
-    for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=pois(i,lh)*pois(j,la)*dcTau(i,j,lh,la,DC_RHO);g.push({i,j,p});s+=p;}
-  }else{
-    const mh=marg(lh,model), ma=marg(la,model);
-    for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=mh[i]*ma[j];g.push({i,j,p});s+=p;}
-  }
+  const mh=marg(lh,model,nu), ma=marg(la,model,nu);
+  for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=mh[i]*ma[j];g.push({i,j,p});s+=p;}
   g.forEach(c=>c.p/=s); g.sort((x,y)=>y.p-x.p);
   return g;
 }
 /* weighted ensemble across all models */
 let GAMMA=1.0;   // ensemble sharpness factor ("magic number")
-function ensembleBase(lh,la,w){
+function ensembleBase(lh,la,w,nu){
   const sum=MODELS.reduce((a,m)=>a+w[m],0)||1, map={};
-  MODELS.forEach(m=>{const wt=w[m]/sum; gridFor(lh,la,m).forEach(c=>{const k=c.i*100+c.j;(map[k]=map[k]||{i:c.i,j:c.j,p:0}).p+=wt*c.p;});});
+  MODELS.forEach(m=>{const wt=w[m]/sum; gridFor(lh,la,m,nu).forEach(c=>{const k=c.i*100+c.j;(map[k]=map[k]||{i:c.i,j:c.j,p:0}).p+=wt*c.p;});});
   return Object.values(map);
 }
 function applyGamma(arr,g){
@@ -684,7 +689,21 @@ function applyGamma(arr,g){
   let Z=0; const out=arr.map(c=>{const p=Math.pow(c.p,g);Z+=p;return {i:c.i,j:c.j,p};});
   out.forEach(c=>c.p/=Z); return out.sort((a,b)=>b.p-a.p);
 }
-function ensembleGrid(lh,la,w){ return applyGamma(ensembleBase(lh,la,w), GAMMA); }
+function ensembleGrid(lh,la,w,nu){ return applyGamma(ensembleBase(lh,la,w,nu), GAMMA); }
+function clampL(x){return Math.min(4,Math.max(0.05,x));}
+function _statAvg(k){const v=Object.values(TEAMSTATS||{}).filter(x=>x.games&&x[k]!=null).map(x=>x[k]);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;}
+function eAttack(ab){const t=(TEAMSTATS||{})[ab];if(!t)return 1;let sc=0,wt=0;const aS=_statAvg('sot'),aP=_statAvg('poss');
+  const convs=Object.values(TEAMSTATS||{}).filter(x=>x.games&&x.shots>0).map(x=>x.gf/x.shots);const aC=convs.length?convs.reduce((a,b)=>a+b,0)/convs.length:null;
+  if(t.sot!=null&&aS){sc+=0.6*(t.sot/aS);wt+=0.6;} const cv=t.shots>0?t.gf/t.shots:null; if(cv!=null&&aC){sc+=0.3*(cv/aC);wt+=0.3;} if(t.poss!=null&&aP){sc+=0.1*(t.poss/aP);wt+=0.1;}
+  return wt>0?sc/wt:1;}
+function eDefense(ab){const t=(TEAMSTATS||{})[ab];if(!t)return 1;let sc=0,wt=0;const aS=_statAvg('sotA')||_statAvg('sot'),aP=_statAvg('possA')||_statAvg('poss');
+  const convs=Object.values(TEAMSTATS||{}).filter(x=>x.games&&x.shotsA>0).map(x=>x.ga/x.shotsA);const aC=convs.length?convs.reduce((a,b)=>a+b,0)/convs.length:null;
+  if(t.sotA!=null&&aS){sc+=0.6*(t.sotA/aS);wt+=0.6;} const cv=t.shotsA>0?t.ga/t.shotsA:null; if(cv!=null&&aC){sc+=0.3*(cv/aC);wt+=0.3;} if(t.possA!=null&&aP){sc+=0.1*(t.possA/aP);wt+=0.1;}
+  return wt>0?sc/wt:1;}
+function advLambda(h,a,lh,la){ if(ADV_ON){ lh*=eAttack(h)*eDefense(a); la*=eAttack(a)*eDefense(h); } return {lh:clampL(lh),la:clampL(la)}; }
+function fxPredict(f){ let r=advLambda(f.h,f.a,f.lh,f.la),lh=r.lh,la=r.la; const t=TACT[f.id]||{};
+  if(t.starH)lh*=1.5; if(t.starA)la*=1.5; if(t.blockH)la*=0.65; if(t.blockA)lh*=0.65; lh=clampL(lh); la=clampL(la);
+  let nu=COM_NU; if(t.blockH||t.blockA)nu=1.6; else if(t.starH||t.starA)nu=0.65; return {lh,la,nu}; }
 /* find the sharpness that minimises ensemble log-loss across finished games (in-sample) */
 function tuneGamma(){
   const bases=FIN.map(m=>({b:ensembleBase(m.lh,m.la,WEIGHTS),sh:m.sh,sa:m.sa}));
@@ -707,13 +726,12 @@ function accuracyWeights(){
 }
 
 /* ---------- matrix: top-5 per model + ensemble; green on actual ---------- */
-function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note=''}={}){
+function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note='',nu=null}={}){
   const cols=[
-    {key:'poisson',label:'Pois',grid:gridFor(lh,la,'poisson')},
-    {key:'dc',label:'D-C',grid:gridFor(lh,la,'dc')},
-    {key:'nb',label:'NB',grid:gridFor(lh,la,'nb')},
-    {key:'com',label:'COM',grid:gridFor(lh,la,'com')},
-    {key:'ens',label:'Ens',grid:ensembleGrid(lh,la,WEIGHTS),ens:true},
+    {key:'com',label:'COM',grid:gridFor(lh,la,'com',nu)},
+    {key:'poisson',label:'Pois',grid:gridFor(lh,la,'poisson',nu)},
+    {key:'geom',label:'Geom',grid:gridFor(lh,la,'geom',nu)},
+    {key:'ens',label:'Ens',grid:ensembleGrid(lh,la,WEIGHTS,nu),ens:true},
   ];
   const eq=s=>actual&&s.i===actual.i&&s.j===actual.j;
   const hitCls=mode==='final'?'won':mode==='live'?'livenow':'';
@@ -722,7 +740,7 @@ function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note=''}={}){
   for(let r=0;r<5;r++){
     rows+=`<tr><td class="rkh">${r+1}</td>`;
     cols.forEach(c=>{
-      const s=c.grid[r], lean=s.i>s.j?'h':s.i<s.j?'a':'d', hit=eq(s)?hitCls:'';
+      const s=c.grid[r], lean=s.i>s.j?'h':s.i<s.j?'a':'d', hit=eq(s)?hitCls:(!actual&&c.ens&&r===0?'won':'');
       rows+=`<td class="mcell ${c.ens?'ens':''} ${hit}">
         <span class="msc ${lean}">${s.i}–${s.j}</span><span class="mp">${(s.p*100).toFixed(1)}%</span>
         ${eq(s)&&mode==='final'?'<span class="mck">✓</span>':''}${eq(s)&&mode==='live'?'<span class="mck live">●</span>':''}</td>`;
@@ -756,12 +774,8 @@ const FIN=[{"h":"MEX","a":"RSA","sh":2,"sa":0,"lh":1.684,"la":0.541},{"h":"KOR",
 /* ---------- in-play model: final = current score + remaining goals ---------- */
 function remainGrid(model,ch,ca,rlh,rla){
   const g=[]; let s=0;
-  if(model==='dc'){
-    for(let kh=0;kh<10;kh++)for(let ka=0;ka<10;ka++){const p=pois(kh,rlh)*pois(ka,rla)*dcTau(kh,ka,rlh,rla,DC_RHO);g.push({i:ch+kh,j:ca+ka,p});s+=p;}
-  }else{
-    const mh=marg(rlh,model), ma=marg(rla,model);
-    for(let kh=0;kh<10;kh++)for(let ka=0;ka<10;ka++){const p=mh[kh]*ma[ka];g.push({i:ch+kh,j:ca+ka,p});s+=p;}
-  }
+  const mh=marg(rlh,model), ma=marg(rla,model);
+  for(let kh=0;kh<10;kh++)for(let ka=0;ka<10;ka++){const p=mh[kh]*ma[ka];g.push({i:ch+kh,j:ca+ka,p});s+=p;}
   g.forEach(c=>c.p/=s); g.sort((x,y)=>y.p-x.p); return g;
 }
 function ensRemain(ch,ca,rlh,rla,w){
@@ -773,9 +787,8 @@ function inplayMatrix(m){
   const frac=Math.max(0,(90-m.min)/90), rlh=m.lh*frac, rla=m.la*frac;
   const cols=[
     {label:'Pois',grid:remainGrid('poisson',m.sh,m.sa,rlh,rla)},
-    {label:'D-C',grid:remainGrid('dc',m.sh,m.sa,rlh,rla)},
-    {label:'NB',grid:remainGrid('nb',m.sh,m.sa,rlh,rla)},
     {label:'COM',grid:remainGrid('com',m.sh,m.sa,rlh,rla)},
+    {label:'Geom',grid:remainGrid('geom',m.sh,m.sa,rlh,rla)},
     {label:'Ens',grid:ensRemain(m.sh,m.sa,rlh,rla,WEIGHTS),ens:true},
   ];
   const isCur=s=>s.i===m.sh&&s.j===m.sa;
@@ -857,7 +870,7 @@ function modelStats(key){
 }
 function renderReport(){
   const c=document.getElementById('report');
-  const models=[['poisson','Poisson'],['dc','Dixon-Coles'],['nb','Neg. Binomial'],['com','COM-Poisson'],['ens','Ensemble']];
+  const models=[['com','COM-Poisson'],['poisson','Poisson'],['geom','Geometric'],['ens','Ensemble']];
   const rowsData=models.map(([k,l])=>[l,modelStats(k)]);
   const bExact=Math.max(...rowsData.map(s=>s[1].exact)), bTop5=Math.max(...rowsData.map(s=>s[1].top5));
   const bLL=Math.min(...rowsData.map(s=>s[1].logloss)), bRank=Math.min(...rowsData.map(s=>s[1].meanRank));
@@ -912,7 +925,11 @@ function renderTickets(){
 }
 
 function renderDossier(){
-  const f=F[active], th=T[f.h], ta=T[f.a], p=f.p;
+  const f=F[active], th=T[f.h], ta=T[f.a];
+  const t=TACT[f.id]||{};
+  const fx=fxPredict(f);
+  const _bl=blendOutcome(outcomeProbs(ensembleGrid(fx.lh,fx.la,WEIGHTS,fx.nu)),f.mkt);
+  const p={h:+(_bl.h*100).toFixed(1),d:+(_bl.d*100).toFixed(1),a:+(_bl.a*100).toFixed(1)};
   const edgeRow = (lab,hv,av,d)=>tapeRow(lab,hv,av,d);
   const intD=v=>String(Math.round(v));
   const decD=v=>v.toFixed(2);
@@ -1005,13 +1022,24 @@ function renderDossier(){
       ${statsBlock(f.h,f.a)}
     </div>
 
+    <div class="mod full">
+      <div class="modh">Tactical momentum · this match (A/B)</div>
+      <div class="tactgrid">
+        <label class="switch sm"><input type="checkbox" class="tact" data-k="starH" ${t.starH?'checked':''}><span class="track"></span><span class="swlbl">${f.h} star return <b class="swsub">+50% attack · blitz ν</b></span></label>
+        <label class="switch sm"><input type="checkbox" class="tact" data-k="starA" ${t.starA?'checked':''}><span class="track"></span><span class="swlbl">${f.a} star return <b class="swsub">+50% attack · blitz ν</b></span></label>
+        <label class="switch sm"><input type="checkbox" class="tact" data-k="blockH" ${t.blockH?'checked':''}><span class="track"></span><span class="swlbl">${f.h} low-block <b class="swsub">−35% opp · lock ν</b></span></label>
+        <label class="switch sm"><input type="checkbox" class="tact" data-k="blockA" ${t.blockA?'checked':''}><span class="track"></span><span class="swlbl">${f.a} low-block <b class="swsub">−35% opp · lock ν</b></span></label>
+      </div>
+    </div>
+
     <div class="mod full sc">
       <div class="modh">Most likely scorelines · top 5</div>
-      ${scorelines(f.h,f.a,p,f.lh,f.la)}
+      ${scoreMatrix(f.h,f.a,fx.lh,fx.la,{mode:'pre',nu:fx.nu,note:`Model xG · ${f.h} ${fx.lh.toFixed(2)} | ${f.a} ${fx.la.toFixed(2)} · COM ν ${fx.nu.toFixed(2)}${ADV_ON?' · advanced-stats on':''}. Top ensemble score highlighted; weights above.`})}
     </div>
   </div>`;
   const d=document.getElementById('dossier');
   d.innerHTML=html;
+  d.querySelectorAll('.tact').forEach(cb=>cb.addEventListener('change',ev=>{const ff=F[active];if(!ff)return;TACT[ff.id]=TACT[ff.id]||{};TACT[ff.id][ev.target.dataset.k]=ev.target.checked;renderDossier();}));
   // restart entrance animation
   d.querySelector('.hero')?.parentElement;
   d.classList.remove('dossier');void d.offsetWidth;d.classList.add('dossier');
@@ -1046,25 +1074,24 @@ document.getElementById('gTune').addEventListener('click',()=>{const g=tuneGamma
 document.getElementById('gReset').addEventListener('click',()=>{GAMMA=1;document.getElementById('gslider').value=100;document.getElementById('gval').textContent='1.00';renderAll();saveSettings();});
 function syncShapeUI(){
   const set=(sel,disp,raw)=>{const row=document.querySelector('.srow[data-s="'+sel+'"]');if(!row)return;row.querySelector('input').value=raw;row.querySelector('.sval').textContent=disp;};
-  set('rho',DC_RHO.toFixed(2),Math.round(DC_RHO*100)); set('nbr',String(NB_R),NB_R); set('nu',COM_NU.toFixed(2),Math.round(COM_NU*100));
+  set('nu',COM_NU.toFixed(2),Math.round(COM_NU*100));
 }
 function setShapesFromSliders(){
   document.querySelectorAll('#shapegrid .srow').forEach(row=>{const v=+row.querySelector('input').value,sk=row.dataset.s;
-    if(sk==='rho')DC_RHO=v/100; else if(sk==='nbr')NB_R=v; else if(sk==='nu')COM_NU=v/100;});
+    if(sk==='nu')COM_NU=v/100;});
   syncShapeUI(); renderAll(); saveSettings();
 }
 function shapeLL(model){let ll=0;FIN.forEach(m=>{const g=gridFor(m.lh,m.la,model);const c=g.find(s=>s.i===m.sh&&s.j===m.sa);ll+=-Math.log(c.p);});return ll/FIN.length;}
 function calibrateShapes(){
-  let b={ll:1e9};for(let r=-25;r<=25;r++){DC_RHO=r/100;const ll=shapeLL('dc');if(ll<b.ll)b={v:DC_RHO,ll};}DC_RHO=b.v;
-  b={ll:1e9};[2,3,4,6,8,10,14,20,30,50].forEach(r=>{NB_R=r;const ll=shapeLL('nb');if(ll<b.ll)b={v:r,ll};});NB_R=b.v;
   b={ll:1e9};for(let v=60;v<=200;v+=5){COM_NU=v/100;const ll=shapeLL('com');if(ll<b.ll)b={v:COM_NU,ll};}COM_NU=b.v;
   syncShapeUI(); renderAll(); saveSettings();
 }
 document.querySelectorAll('#shapegrid input').forEach(inp=>inp.addEventListener('input',setShapesFromSliders));
 document.getElementById('sCal').addEventListener('click',calibrateShapes);
-document.getElementById('sReset').addEventListener('click',()=>{DC_RHO=-0.12;NB_R=14;COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
+document.getElementById('sReset').addEventListener('click',()=>{COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
 document.getElementById('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
 document.getElementById('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);document.getElementById('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
+document.getElementById('advToggle').addEventListener('change',e=>{ADV_ON=e.target.checked;lsSet('wc26.advon',ADV_ON);recompute();});
 document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders);
 document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
 document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
@@ -1135,11 +1162,14 @@ async function loadSummaries(games){
 let TEAMSTATS={};
 function buildTeamStats(games){const acc={};
   games.filter(g=>g.finished).forEach(g=>{const c=STATCACHE[g.id]||{s:{},sot:{}};
-    const side=(me,gf,ga)=>{if(!me)return;const a=acc[me]=acc[me]||{games:0,gf:0,ga:0,_s:{}};a.games++;a.gf+=gf;a.ga+=ga;
-      const ss=Object.assign({},c.s[me]||{});if(ss.sot==null&&c.sot&&c.sot[me])ss.sot=c.sot[me];
-      for(const k in ss){if(ss[k]==null)continue;const e=a._s[k]=a._s[k]||{sum:0,n:0};e.sum+=ss[k];e.n++;}};
-    side(g.home.abbr,g.home.score,g.away.score);side(g.away.abbr,g.away.score,g.home.score);});
-  const out={};for(const ab in acc){const a=acc[ab];const o={games:a.games,gf:a.gf/a.games,ga:a.ga/a.games};for(const k in a._s)o[k]=a._s[k].sum/a._s[k].n;out[ab]=o;}return out;}
+    const mk=(ab)=>{const ss=Object.assign({},c.s[ab]||{});if(ss.sot==null&&c.sot&&c.sot[ab])ss.sot=c.sot[ab];return ss;};
+    const hS=mk(g.home.abbr), aS=mk(g.away.abbr);
+    const side=(me,gf,ga,my,opp)=>{if(!me)return;const a=acc[me]=acc[me]||{games:0,gf:0,ga:0,_f:{},_a:{}};a.games++;a.gf+=gf;a.ga+=ga;
+      for(const k in my){if(my[k]==null)continue;const e=a._f[k]=a._f[k]||{sum:0,n:0};e.sum+=my[k];e.n++;}
+      for(const k in opp){if(opp[k]==null)continue;const e=a._a[k]=a._a[k]||{sum:0,n:0};e.sum+=opp[k];e.n++;}};
+    side(g.home.abbr,g.home.score,g.away.score,hS,aS);side(g.away.abbr,g.away.score,g.home.score,aS,hS);});
+  const out={};for(const ab in acc){const a=acc[ab];const o={games:a.games,gf:a.gf/a.games,ga:a.ga/a.games};
+    for(const k in a._f)o[k]=a._f[k].sum/a._f[k].n; for(const k in a._a)o[k+'A']=a._a[k].sum/a._a[k].n; out[ab]=o;}return out;}
 function profileTeam(ab){const t=TEAMSTATS[ab];if(!t||!t.games)return null;
   const all=Object.values(TEAMSTATS).filter(x=>x.games);const avg=k=>{const v=all.map(x=>x[k]).filter(x=>x!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const tags=[];const gfA=avg('gf'),gaA=avg('ga');
@@ -1274,7 +1304,7 @@ function rebuildLiveData(games,form){
   if(nf.length){FIN.length=0;nf.forEach(x=>FIN.push(x));}
   LIVE.length=0;
   games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
-  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));const mkt=MARKET[marketKey(g.home.abbr,g.away.abbr)]||null;const ob=blendOutcome(o,mkt);nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),mkt:mkt,p:{h:+(ob.h*100).toFixed(1),d:+(ob.d*100).toFixed(1),a:+(ob.a*100).toFixed(1)}});});
+  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const _al=advLambda(g.home.abbr,g.away.abbr,lh,la);const o=outcomeProbs(ensembleGrid(_al.lh,_al.la,WEIGHTS));const mkt=MARKET[marketKey(g.home.abbr,g.away.abbr)]||null;const ob=blendOutcome(o,mkt);nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),mkt:mkt,p:{h:+(ob.h*100).toFixed(1),d:+(ob.d*100).toFixed(1),a:+(ob.a*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
   TEAMSTATS=buildTeamStats(games);
 }
