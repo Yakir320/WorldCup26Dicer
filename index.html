@@ -200,6 +200,24 @@
   .srow label b{color:var(--mint);font-family:var(--display);font-size:14px;margin-left:4px}
   .srow input{width:100%}
   @media(max-width:680px){ .shapegrid{grid-template-columns:1fr;gap:12px} }
+  .statsmini{margin-top:4px}
+  .smhd{display:flex;justify-content:space-between;align-items:center;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.5px;margin-bottom:8px}
+  .smhd .smmid{font-family:var(--mono);font-size:9px;font-weight:400;letter-spacing:.5px;color:var(--dimmer);text-transform:uppercase}
+  table.stat2{width:100%;border-collapse:collapse}
+  table.stat2 td{padding:5px 4px;border-bottom:1px solid var(--line)}
+  .stat2 .sl{text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.4px;color:var(--dim);text-transform:uppercase;width:48%}
+  .stat2 .sv{font-family:var(--display);font-weight:700;font-size:15px;width:26%}
+  .stat2 .sv.h{text-align:left;color:var(--coral)}
+  .stat2 .sv.a{text-align:right;color:var(--mint)}
+  .profrow{display:flex;gap:10px;margin-top:13px}
+  .profside{flex:1;display:flex;flex-wrap:wrap;gap:5px;align-content:flex-start}
+  .profside.r{justify-content:flex-end}
+  .pwho{flex-basis:100%;font-family:var(--mono);font-size:9px;letter-spacing:.6px;color:var(--dimmer);text-transform:uppercase}
+  .profside.r .pwho{text-align:right}
+  .ptag{font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .p-att{background:rgba(255,92,66,.14);border-color:rgba(255,92,66,.4);color:#ffb3a6}
+  .p-def{background:rgba(47,224,174,.12);border-color:rgba(47,224,174,.4);color:var(--mint)}
+  .p-pos{background:rgba(242,193,78,.12);border-color:rgba(242,193,78,.4);color:var(--amber)}
   /* scoreline matrix */
   .matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.matrix{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -391,7 +409,7 @@
     <div class="shapegrid" id="shapegrid">
       <div class="srow" data-s="rho"><label>Dixon-Coles ρ <b class="sval">-0.12</b></label><input type="range" min="-25" max="25" value="-12"></div>
       <div class="srow" data-s="nbr"><label>Neg-Binom r <b class="sval">14</b></label><input type="range" min="2" max="60" value="14"></div>
-      <div class="srow" data-s="nu"><label>COM-Poisson ν <b class="sval">1.40</b></label><input type="range" min="60" max="200" value="140"></div>
+      <div class="srow" data-s="nu"><label>COM-Poisson ν <b class="sval">1.00</b></label><input type="range" min="60" max="200" value="100"></div>
     </div>
     <div class="calcbtns"><button id="sCal" class="cbtn">Calibrate to results</button><button id="sReset" class="cbtn">Reset</button></div>
     <div class="mbnote">ρ tweaks low-score/draw balance · r is Neg-Binom spread (high r ≈ Poisson) · ν is COM-Poisson tightness (ν&gt;1 fits football's clustered scores). <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
@@ -547,7 +565,7 @@ function keyRead(h,a,th,ta,p){
 const ord=n=>['','1st','2nd','3rd','4th'][n]||n+'th';
 
 /* ---------- scoreline odds: Poisson · Dixon-Coles · Neg. Binomial · COM-Poisson · Ensemble ---------- */
-let DC_RHO=-0.12, NB_R=14, COM_NU=1.4;
+let DC_RHO=-0.12, NB_R=14, COM_NU=1.0;
 const MODELS=['poisson','dc','nb','com'];
 let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
@@ -934,6 +952,11 @@ function renderDossier(){
       <div class="read">${keyRead(f.h,f.a,th,ta,p)}</div>
     </div>
 
+    <div class="mod full">
+      <div class="modh">Recent form · key stats & style</div>
+      ${statsBlock(f.h,f.a)}
+    </div>
+
     <div class="mod full sc">
       <div class="modh">Most likely scorelines · top 5</div>
       ${scorelines(f.h,f.a,p,f.lh,f.la)}
@@ -991,7 +1014,7 @@ function calibrateShapes(){
 }
 document.querySelectorAll('#shapegrid input').forEach(inp=>inp.addEventListener('input',setShapesFromSliders));
 document.getElementById('sCal').addEventListener('click',calibrateShapes);
-document.getElementById('sReset').addEventListener('click',()=>{DC_RHO=-0.12;NB_R=14;COM_NU=1.4;syncShapeUI();renderAll();saveSettings();});
+document.getElementById('sReset').addEventListener('click',()=>{DC_RHO=-0.12;NB_R=14;COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
 const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=400&dates=20260611-20260719';
@@ -1028,9 +1051,61 @@ function parseEvent(ev){
   const side=cp=>({abbr:cp.team&&cp.team.abbreviation,name:cp.team&&cp.team.displayName,
     score:cp.score!=null?Number(cp.score):null,sot:espnStat(cp.statistics,'shotsOnTarget'),
     redCards:(cp.team&&reds[cp.team.id])||0});
-  return {id:ev.id,date:ev.date,group:grp?grp[1]:null,state:t.state,finished:!!t.completed,
+  return {id:ev.id,date:ev.date,group:grp?grp[1]:null,state:t.state,finished:!!t.completed,neutral:!!c.neutralSite,
     statusDetail:t.shortDetail||t.detail||'',home:side(home),away:side(away)};
 }
+// ===== per-match team stats (ESPN summary endpoint) + style profiler =====
+const SUMMARY_URL=id=>'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/summary?event='+id;
+const STAT_DEFS=[
+  {key:'poss',label:'Possession',unit:'%',names:['possessionPct','possession']},
+  {key:'shots',label:'Shots',names:['totalShots','shots']},
+  {key:'sot',label:'Shots on target',names:['shotsOnTarget','shotsOnGoal','onTargetShots']},
+  {key:'passes',label:'Passes',names:['totalPasses','passes']},
+  {key:'fouls',label:'Fouls',names:['foulsCommitted','fouls']},
+  {key:'corners',label:'Corners',names:['wonCorners','corners','cornerKicks']}
+];
+function _num(v){if(v==null)return null;const x=parseFloat(String(v).replace('%','').replace(/[^0-9.\-]/g,''));return Number.isFinite(x)?x:null;}
+function _pick(arr,names){if(!Array.isArray(arr))return null;for(const nm of names){const s=arr.find(x=>x&&(x.name===nm||x.abbreviation===nm));if(s){const v=_num(s.displayValue!=null?s.displayValue:s.value);if(v!=null)return v;}}return null;}
+function parseSummaryStats(j){const out={};const tms=(j&&j.boxscore&&j.boxscore.teams)||[];
+  tms.forEach(tm=>{const ab=tm.team&&tm.team.abbreviation;if(!ab)return;const arr=tm.statistics||[];const st={};STAT_DEFS.forEach(d=>{const v=_pick(arr,d.names);if(v!=null)st[d.key]=v;});out[ab]=st;});return out;}
+let STATCACHE=lsGet('wc26.stats',{});
+async function fetchSummary(id){const strat=CUSTOM_PROXY?[u=>CUSTOM_PROXY+encodeURIComponent(u),...PROXIES]:PROXIES;
+  for(const wrap of strat){try{const r=await fetch(wrap(SUMMARY_URL(id)),{cache:'no-store'});if(!r.ok)continue;const j=await r.json();if(j&&j.boxscore)return j;}catch(e){}}return null;}
+async function loadSummaries(games){
+  const todo=games.filter(g=>g.finished&&g.id&&!STATCACHE[g.id]);if(!todo.length)return false;
+  const q=todo.slice();let changed=false;
+  const worker=async()=>{while(q.length){const g=q.shift();const j=await fetchSummary(g.id);
+    STATCACHE[g.id]={s:j?parseSummaryStats(j):{},sot:{[g.home.abbr]:g.home.sot,[g.away.abbr]:g.away.sot}};changed=true;}};
+  await Promise.all([worker(),worker(),worker(),worker()]);
+  if(changed)lsSet('wc26.stats',STATCACHE);return changed;}
+let TEAMSTATS={};
+function buildTeamStats(games){const acc={};
+  games.filter(g=>g.finished).forEach(g=>{const c=STATCACHE[g.id]||{s:{},sot:{}};
+    const side=(me,gf,ga)=>{if(!me)return;const a=acc[me]=acc[me]||{games:0,gf:0,ga:0,_s:{}};a.games++;a.gf+=gf;a.ga+=ga;
+      const ss=Object.assign({},c.s[me]||{});if(ss.sot==null&&c.sot&&c.sot[me])ss.sot=c.sot[me];
+      for(const k in ss){if(ss[k]==null)continue;const e=a._s[k]=a._s[k]||{sum:0,n:0};e.sum+=ss[k];e.n++;}};
+    side(g.home.abbr,g.home.score,g.away.score);side(g.away.abbr,g.away.score,g.home.score);});
+  const out={};for(const ab in acc){const a=acc[ab];const o={games:a.games,gf:a.gf/a.games,ga:a.ga/a.games};for(const k in a._s)o[k]=a._s[k].sum/a._s[k].n;out[ab]=o;}return out;}
+function profileTeam(ab){const t=TEAMSTATS[ab];if(!t||!t.games)return null;
+  const all=Object.values(TEAMSTATS).filter(x=>x.games);const avg=k=>{const v=all.map(x=>x[k]).filter(x=>x!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
+  const tags=[];const gfA=avg('gf'),gaA=avg('ga');
+  if(gfA!=null){if(t.gf>=gfA*1.2)tags.push(['Potent attack','att']);else if(t.gf<=gfA*0.8)tags.push(['Blunt up top','low']);}
+  if(gaA!=null){if(t.ga<=gaA*0.8)tags.push(['Stingy defense','def']);else if(t.ga>=gaA*1.2)tags.push(['Leaky defense','low']);}
+  if(t.poss!=null){if(t.poss>=53)tags.push(['Possession-based','pos']);else if(t.poss<=47)tags.push(['Counter-attacking','cnt']);}
+  if(t.shots!=null&&t.sot!=null&&t.shots>0){const r=t.sot/t.shots;if(r>=0.42)tags.push(['Clinical','att']);else if(r<=0.28)tags.push(['Wasteful','low']);}
+  if(t.fouls!=null){const fA=avg('fouls');if(fA!=null&&t.fouls>=fA*1.2)tags.push(['Physical','phy']);}
+  if(!tags.length)tags.push(['Balanced','bal']);return tags.slice(0,4);}
+function statRow(label,unit,hv,av){const f=v=>v==null?'—':(unit==='%'?Math.round(v)+'%':Math.round(v*10)/10);
+  return `<tr><td class="sv h">${f(hv)}</td><td class="sl">${label}</td><td class="sv a">${f(av)}</td></tr>`;}
+function statsBlock(h,a){const th=TEAMSTATS[h],ta=TEAMSTATS[a];
+  if((!th||!th.games)&&(!ta||!ta.games))return `<div class="scnote">Per-match stats sync from finished games in the background — reopen in a moment if this is blank, or these sides haven't played yet.</div>`;
+  const gp=Math.max((th&&th.games)||0,(ta&&ta.games)||0);
+  const rows=[statRow('Goals for','',th&&th.gf,ta&&ta.gf),statRow('Goals against','',th&&th.ga,ta&&ta.ga)];
+  STAT_DEFS.forEach(d=>rows.push(statRow(d.label,d.unit||'',th&&th[d.key],ta&&ta[d.key])));
+  const tg=ab=>{const p=profileTeam(ab);return p?p.map(t=>`<span class="ptag p-${t[1]}">${t[0]}</span>`).join(''):'<span class="ptag p-bal">no data yet</span>';};
+  return `<div class="statsmini"><div class="smhd"><span style="color:var(--coral)">${h}</span><span class="smmid">mean · last ${gp} game${gp===1?'':'s'}</span><span style="color:var(--mint)">${a}</span></div>
+    <table class="stat2">${rows.join('')}</table>
+    <div class="profrow"><div class="profside"><div class="pwho">${h} style</div>${tg(h)}</div><div class="profside r"><div class="pwho">${a} style</div>${tg(a)}</div></div></div>`;}
 // --- team strength prior (FIFA ranking, June 2026 pre-tournament) ---
 const FIFA_RANK={ARG:1,ESP:2,FRA:3,ENG:4,POR:5,BRA:6,MAR:7,NED:8,BEL:9,GER:10,CRO:11,COL:13,MEX:14,SEN:15,URU:16,USA:17,JPN:18,SUI:19,IRN:20,TUR:22,ECU:23,AUT:24,KOR:25,AUS:27,ALG:28,DZA:28,EGY:29,CAN:30,NOR:31,CIV:33,PAN:34,SWE:38,CZE:40,PAR:41,SCO:42,TUN:45,COD:46,DRC:46,UZB:50,QAT:56,IRQ:57,RSA:60,SAF:60,KSA:61,JOR:63,BIH:64,CPV:67,GHA:73,CUW:82,HAI:83,NZL:85};
 const STR_REF=38,STR_BETA=0.42,STR_LNSCALE=1.5;
@@ -1053,8 +1128,9 @@ function buildForm(games){
     else teams[ab]={games:0,xgFor:own.attack,xgAgainst:own.defense};});
   return {teams,leagueAvg};
 }
-function xgLambda(hf,af,la){const cap=4,cl=x=>Math.min(cap,Math.max(0.05,x));return {lh:cl(hf.xgFor*af.xgAgainst/la*1.1),la:cl(af.xgFor*hf.xgAgainst/la*0.92)};}
-function lambdasFor(g,form){const fb={xgFor:form.leagueAvg,xgAgainst:form.leagueAvg};return xgLambda(form.teams[g.home.abbr]||fb,form.teams[g.away.abbr]||fb,form.leagueAvg);}
+const HOSTS={USA:1,MEX:1,CAN:1};
+function xgLambda(hf,af,la,ha){ha=ha||1;const cap=4,cl=x=>Math.min(cap,Math.max(0.05,x));return {lh:cl(hf.xgFor*af.xgAgainst/la*ha),la:cl(af.xgFor*hf.xgAgainst/la/ha)};}
+function lambdasFor(g,form){const fb={xgFor:form.leagueAvg,xgAgainst:form.leagueAvg};const ha=(!g.neutral&&HOSTS[g.home.abbr])?1.06:1.0;return xgLambda(form.teams[g.home.abbr]||fb,form.teams[g.away.abbr]||fb,form.leagueAvg,ha);}
 // extra factors, all from free ESPN data: rest/congestion, knockout stage, stakes, red cards
 function contextFactors(g,allGames){
   let hM=1,aM=1;
@@ -1102,6 +1178,7 @@ function rebuildLiveData(games,form){
   games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
   const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),p:{h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
+  TEAMSTATS=buildTeamStats(games);
 }
 function setBanner(kind,fin,live,err){
   const b=document.getElementById('livebanner');if(!b)return;
@@ -1111,15 +1188,17 @@ function setBanner(kind,fin,live,err){
 }
 async function bootstrapLive(){
   setBanner('loading');
+  let games=[];
   try{
     const data=await fetchESPN();
-    const games=(data.events||[]).map(parseEvent).filter(g=>g.home.abbr&&g.away.abbr);
+    games=(data.events||[]).map(parseEvent).filter(g=>g.home.abbr&&g.away.abbr);
     if(!games.length)throw new Error('no games');
     rebuildLiveData(games,buildForm(games));
     setBanner('live',games.filter(g=>g.finished).length,games.filter(g=>g.state==='in').length);
   }catch(e){ setBanner('snapshot',0,0,e); }
   active=0;
   renderLive();renderTickets();renderDossier();renderFinished();renderReport();syncWeightLabels();
+  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);if(ch)renderDossier();}catch(e){}}
 }
 
 loadSettings();
