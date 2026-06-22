@@ -916,6 +916,8 @@ function renderDossier(){
   const edgeRow = (lab,hv,av,d)=>tapeRow(lab,hv,av,d);
   const intD=v=>String(Math.round(v));
   const decD=v=>v.toFixed(2);
+  const rr=ab=>{const r=RATINGS[ab];return r?((r.att!=null?r.att:'\u2013')+' / '+(r.def!=null?r.def:'\u2013')):'\u2013 / \u2013';};
+  const sqLine=(RATINGS[f.h]||RATINGS[f.a])?`<div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:8px">Squad core (att / def) — <b style="color:var(--ink)">${f.h}</b> ${rr(f.h)} &nbsp;·&nbsp; <b style="color:var(--ink)">${f.a}</b> ${rr(f.a)}${SQUAD_ON?'':' &nbsp;·&nbsp; turn on Squad quality to apply'}</div>`:'';
 
   const html=`
   <div class="hero">
@@ -949,6 +951,7 @@ function renderDossier(){
         <span>Draw <span class="fav">${p.d}%</span></span>
         <span>${f.a} <span class="fav">${p.a}%</span></span>
       </div>
+      ${sqLine}
     </div>
   </div>
 
@@ -1113,13 +1116,21 @@ function parseEvent(ev){
 }
 // ===== per-match team stats (ESPN summary endpoint) + style profiler =====
 /* ===== API-Football player ratings (free tier) — paste a key to activate; cached in localStorage ===== */
-const FOOTBALL_API_KEY='';   // leave EMPTY — the key now lives in your Cloudflare Worker, not here
-const FB_PROXY='';           // paste your Worker URL: 'https://wc26.YOURNAME.workers.dev/?fb='
+const FOOTBALL_API_KEY='a3768ee42778ab253e173fec6fc003e8';   // direct mode — key is visible in page source
+const FB_PROXY='';           // optional: your Worker URL 'https://wc26.YOURNAME.workers.dev/?fb=' (hides the key + most reliable)
 const FB_LEAGUE=1, FB_SEASON=2026;         // World Cup 2026
 const RATINGS_FRESH_MS=12*3600*1000;       // re-query a team at most ~twice/day
 function ratingsFresh(ab){const r=RATINGS[ab];return !!(r&&r.src==='api'&&r.ts&&(Date.now()-r.ts<RATINGS_FRESH_MS));}
 function posBucket(pos){const p=(pos||'').toUpperCase()[0];return (p==='F'||p==='M')?'att':((p==='G'||p==='D')?'def':null);}
-async function fbGet(path){try{const url=FB_PROXY?(FB_PROXY+encodeURIComponent(path)):('https://v3.football.api-sports.io/'+path);const opts=FB_PROXY?{}:{headers:{'x-apisports-key':FOOTBALL_API_KEY}};const r=await fetch(url,opts);if(!r.ok)return null;const j=await r.json();return (j&&j.response)||null;}catch(e){return null;}}
+async function fbGet(path){
+  const base='https://v3.football.api-sports.io/'+path;
+  const tries = FB_PROXY
+    ? [[FB_PROXY+encodeURIComponent(path),{}]]
+    : [[base,{headers:{'x-apisports-key':FOOTBALL_API_KEY}}],
+       ['https://corsproxy.io/?url='+encodeURIComponent(base),{headers:{'x-apisports-key':FOOTBALL_API_KEY}}]];
+  for(const [u,opts] of tries){ try{ const r=await fetch(u,opts); if(!r.ok)continue; const j=await r.json(); if(j&&j.response)return j.response; }catch(e){} }
+  return null;
+}
 async function ensureFbTeams(){if(Object.keys(FBTEAMS).length)return;const resp=await fbGet('teams?league='+FB_LEAGUE+'&season='+FB_SEASON);if(!resp)return;resp.forEach(t=>{const code=(t.team.code||'').toUpperCase();if(code)FBTEAMS[code]={id:t.team.id};});lsSet('wc26.fbteams',FBTEAMS);}
 async function fetchTeamRatings(abbrs){
   if(!FOOTBALL_API_KEY && !FB_PROXY)return false;
