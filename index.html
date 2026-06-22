@@ -446,6 +446,18 @@
       <div class="chips" id="scoutChips"></div>
     </div>
     <div class="inrow"><label>Market weight <b class="sval" id="mktv">50%</b> <span class="swsub" id="mktnote">— paste an odds API key in the code to activate</span></label><input type="range" id="mktSlider" min="0" max="100" value="50"></div>
+    <div class="shapehd" style="margin-top:14px">Elite predictive modules · A/B</div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="bivarToggle"><span class="track"></span><span class="swlbl">Goal correlation · Bivariate Poisson <b class="swsub">joint scoring: strangulation ↔ shootout</b></span></label></div>
+    <div class="srow"><label>Correlation ρ <b class="sval" id="bivarv">0.00</b></label><input type="range" id="bivarSlider" min="-30" max="30" value="0"></div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="jeopToggle"><span class="track"></span><span class="swlbl">Tournament jeopardy <b class="swsub">MD3 / win-or-out → draw &amp; under bias</b></span></label></div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="scenToggle"><span class="track"></span><span class="swlbl">Pre-match scenario tuning <b class="swsub">referee &amp; manager dials below</b></span></label></div>
+    <div class="scoutedit" id="scenedit">
+      <div class="srow"><label>Referee strictness 1–10 <b class="sval" id="refv">5</b></label><input type="range" id="refSlider" min="1" max="10" value="5"></div>
+      <div class="srow"><label>Manager pragmatism 0–10 <b class="sval" id="pragv">0</b></label><input type="range" id="pragSlider" min="0" max="10" value="0"></div>
+    </div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="lineupToggle"><span class="track"></span><span class="swlbl">Lineup quality · player ratings <b class="swsub">core ratings set per-match in the dossier</b></span></label></div>
+    <div class="srow"><label>Lineup influence β <b class="sval" id="lbetav">0.35</b></label><input type="range" id="lbetaSlider" min="0" max="60" value="35"></div>
+    <div class="mbnote">Bivariate Poisson is the real upgrade — it models the two scores as <b>correlated</b> (ρ&lt;0 = mutual strangulation, more 0-0/1-1; ρ&gt;0 = open shootout). Jeopardy &amp; scenario dials are <b>scenario tools</b> — leave them off and A/B each on the Outcome scoreboard before trusting it.</div>
     <div class="mbnote"><b>Shot-based xG</b> rebuilds ratings from shots on target (chance quality) instead of raw goals — it cools lucky scorelines and credits stingy defenses; the note shows whether it lowers log-loss on finished games. <b>Scout adjustments</b> nudge a team's attack/defense by hand for what the model is blind to (a deep block, a key injury). <b class="warn">Each only affects the model while its switch is on</b> — flip off and the numbers revert.</div>
   </div>
 
@@ -604,7 +616,7 @@ const MODELS=['com','poisson','geom'];
 let WEIGHTS={com:55,poisson:30,geom:15};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.mktw',MKT_W);lsSet('wc26.advon',ADV_ON);}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.mktw',MKT_W);lsSet('wc26.advon',ADV_ON);lsSet('wc26.bivaron',BIVAR_ON);lsSet('wc26.bivarrho',BIVAR_RHO);lsSet('wc26.jeopon',JEOP_ON);lsSet('wc26.scenon',SCENARIO_ON);lsSet('wc26.ref',REF_STRICT);lsSet('wc26.prag',MGR_PRAG);lsSet('wc26.lineupon',LINEUP_ON);lsSet('wc26.lbeta',LINEUP_BETA);}
 function loadSettings(){
   const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
   const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
@@ -615,6 +627,19 @@ function loadSettings(){
   const sed=document.getElementById('scoutedit'); if(sed)sed.classList.toggle('on',SCOUT_ON);
   ADV_ON=lsGet('wc26.advon',false);
   const adt=document.getElementById('advToggle'); if(adt)adt.checked=ADV_ON;
+  BIVAR_ON=lsGet('wc26.bivaron',false); BIVAR_RHO=lsGet('wc26.bivarrho',0); JEOP_ON=lsGet('wc26.jeopon',false); SCENARIO_ON=lsGet('wc26.scenon',false); REF_STRICT=lsGet('wc26.ref',5); MGR_PRAG=lsGet('wc26.prag',0);
+  const _bt=document.getElementById('bivarToggle'); if(_bt)_bt.checked=BIVAR_ON;
+  const _bs=document.getElementById('bivarSlider'); if(_bs)_bs.value=Math.round(BIVAR_RHO*100);
+  const _bv=document.getElementById('bivarv'); if(_bv)_bv.textContent=BIVAR_RHO.toFixed(2);
+  const _jt=document.getElementById('jeopToggle'); if(_jt)_jt.checked=JEOP_ON;
+  const _st=document.getElementById('scenToggle'); if(_st)_st.checked=SCENARIO_ON;
+  const _se=document.getElementById('scenedit'); if(_se)_se.classList.toggle('on',SCENARIO_ON);
+  const _rs=document.getElementById('refSlider'); if(_rs)_rs.value=REF_STRICT; const _rv=document.getElementById('refv'); if(_rv)_rv.textContent=REF_STRICT;
+  const _ps=document.getElementById('pragSlider'); if(_ps)_ps.value=MGR_PRAG; const _pv=document.getElementById('pragv'); if(_pv)_pv.textContent=MGR_PRAG;
+  LINEUP_ON=lsGet('wc26.lineupon',false); LINEUP_BETA=lsGet('wc26.lbeta',0.35);
+  const _lt=document.getElementById('lineupToggle'); if(_lt)_lt.checked=LINEUP_ON;
+  const _lb=document.getElementById('lbetaSlider'); if(_lb)_lb.value=Math.round(LINEUP_BETA*100);
+  const _lv=document.getElementById('lbetav'); if(_lv)_lv.textContent=LINEUP_BETA.toFixed(2);
   MKT_W=lsGet('wc26.mktw',0.5);
   const ms2=document.getElementById('mktSlider'); if(ms2)ms2.value=Math.round(MKT_W*100);
   const mv2=document.getElementById('mktv'); if(mv2)mv2.textContent=Math.round(MKT_W*100)+'%';
@@ -629,9 +654,17 @@ function loadSettings(){
 function savePred(id,lh,la,overwrite){if(!id)return;const m=lsGet('wc26.preds',{});if(m[id]&&!overwrite)return;m[id]={lh:+(+lh).toFixed(4),la:+(+la).toFixed(4)};lsSet('wc26.preds',m);}
 function loadPred(id){const m=lsGet('wc26.preds',{});return (m&&m[id])||null;}
 let USE_XG=false, SCOUT_ON=false, SCOUT={}, LAST_GAMES=[];
-const ODDS_API_KEY='';   // free key from the-odds-api.com -> paste between the quotes to activate market blend
+const ODDS_API_KEY='';        // the-odds-api.com (free tier) -> market 1X2 blend
+// ===== premium data hooks — paste a key to activate (all optional) =====
+const FOOTBALL_API_KEY='';    // API-Football (api-football.com): lineups, player ratings, injuries
+const FOOTBALL_DATA_KEY='';   // Football-Data.org: fixtures, standings
+// Weather/altitude uses Open-Meteo (open-meteo.com) — FREE, NO KEY. Host-city elevations (m):
+const VENUE_ALT={ 'Mexico City':2240,'Guadalajara':1566,'Monterrey':540,'Atlanta':320,'Dallas':131,'Kansas City':265,'Denver':1609,'Houston':32,'Los Angeles':93,'San Francisco':16,'Seattle':54,'Boston':43,'Philadelphia':12,'New York':10,'Miami':2,'Toronto':76,'Vancouver':2 };
+async function fetchWeather(lat,lon){ try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&current=temperature_2m,relative_humidity_2m,wind_speed_10m'); if(!r.ok)return null; const j=await r.json(); return j.current||null; }catch(e){return null;} }
 let MARKET={}, MKT_W=0.5;
 let ADV_ON=false, TACT={};
+let BIVAR_ON=false, BIVAR_RHO=0, JEOP_ON=false, SCENARIO_ON=false, REF_STRICT=5, MGR_PRAG=0;
+let LINEUP_ON=false, LINEUP_BETA=0.35;
 function fact(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
 function comb(n,k){return fact(n)/(fact(k)*fact(n-k));}
 function pois(k,lam){return Math.exp(-lam)*Math.pow(lam,k)/fact(k);}
@@ -702,8 +735,27 @@ function eDefense(ab){const t=(TEAMSTATS||{})[ab];if(!t)return 1;let sc=0,wt=0;c
   return wt>0?sc/wt:1;}
 function advLambda(h,a,lh,la){ if(ADV_ON){ lh*=eAttack(h)*eDefense(a); la*=eAttack(a)*eDefense(h); } return {lh:clampL(lh),la:clampL(la)}; }
 function fxPredict(f){ let r=advLambda(f.h,f.a,f.lh,f.la),lh=r.lh,la=r.la; const t=TACT[f.id]||{};
-  if(t.starH)lh*=1.5; if(t.starA)la*=1.5; if(t.blockH)la*=0.65; if(t.blockA)lh*=0.65; lh=clampL(lh); la=clampL(la);
-  let nu=COM_NU; if(t.blockH||t.blockA)nu=1.6; else if(t.starH||t.starA)nu=0.65; return {lh,la,nu}; }
+  if(t.starH)lh*=1.5; if(t.starA)la*=1.5; if(t.blockH)la*=0.65; if(t.blockA)lh*=0.65;
+  let nu=COM_NU; if(t.blockH||t.blockA)nu=1.6; else if(t.starH||t.starA)nu=0.65;
+  if(SCENARIO_ON){ if(MGR_PRAG>0)nu=Math.max(nu,1.0+MGR_PRAG*0.08); const rk=1+(REF_STRICT-5)*0.02; lh*=rk; la*=rk; }
+  if(JEOP_ON && T[f.h]&&T[f.a] && (T[f.h].pl||0)>=2 && (T[f.a].pl||0)>=2){ nu=Math.max(nu,1.5); lh*=0.92; la*=0.92; }
+  if(LINEUP_ON){ const laH=t.laH!=null?t.laH:5.5,ldH=t.ldH!=null?t.ldH:5.5,laA=t.laA!=null?t.laA:5.5,ldA=t.ldA!=null?t.ldA:5.5; lh*=lineupMult(laH,ldA); la*=lineupMult(laA,ldH); }
+  lh=clampL(lh); la=clampL(la); return {lh,la,nu}; }
+function bivpoisGrid(lh,la,l3){
+  l3=Math.max(0,Math.min(l3,Math.min(lh,la)-0.01)); const l1=Math.max(0.01,lh-l3),l2=Math.max(0.01,la-l3);
+  const g=[]; let s=0;
+  for(let x=0;x<10;x++)for(let y=0;y<10;y++){let p=0;const mm=Math.min(x,y);for(let k=0;k<=mm;k++)p+=pois(x-k,l1)*pois(y-k,l2)*pois(k,l3);g.push({i:x,j:y,p});s+=p;}
+  g.forEach(c=>c.p/=s); g.sort((a,b)=>b.p-a.p); return g;
+}
+function corrGrid(lh,la,rho){
+  if(rho>=0) return bivpoisGrid(lh,la,rho*Math.min(lh,la));
+  const g=[];let s=0;for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=pois(i,lh)*pois(j,la)*dcTau(i,j,lh,la,rho);g.push({i,j,p});s+=p;}
+  g.forEach(c=>c.p/=s);g.sort((a,b)=>b.p-a.p);return g;
+}
+function predGrid(lh,la,nu){ return BIVAR_ON?corrGrid(lh,la,BIVAR_RHO):ensembleGrid(lh,la,WEIGHTS,nu); }
+/* lineup quality: log-linear strength, exp(beta*(attackCore - oppDefenceCore)/5), clamped — can't explode */
+function lineupMult(att,oppDef){ const m=Math.exp(LINEUP_BETA*(att-oppDef)/5); return Math.min(1.7,Math.max(0.6,m)); }
+async function fetchLineups(fixtureId){ if(!FOOTBALL_API_KEY)return null; /* API-Football: GET /fixtures/lineups?fixture=ID + /players ratings; average attack core (FW+AM) & defence core (DF+DM+GK) to 1-10, write into TACT[id].laH/ldH/laA/ldA */ return null; }
 /* find the sharpness that minimises ensemble log-loss across finished games (in-sample) */
 function tuneGamma(){
   const bases=FIN.map(m=>({b:ensembleBase(m.lh,m.la,WEIGHTS),sh:m.sh,sa:m.sa}));
@@ -726,12 +778,12 @@ function accuracyWeights(){
 }
 
 /* ---------- matrix: top-5 per model + ensemble; green on actual ---------- */
-function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note='',nu=null}={}){
+function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note='',nu=null,corr=null}={}){
   const cols=[
     {key:'com',label:'COM',grid:gridFor(lh,la,'com',nu)},
     {key:'poisson',label:'Pois',grid:gridFor(lh,la,'poisson',nu)},
     {key:'geom',label:'Geom',grid:gridFor(lh,la,'geom',nu)},
-    {key:'ens',label:'Ens',grid:ensembleGrid(lh,la,WEIGHTS,nu),ens:true},
+    {key:'ens',label:'Ens',grid:(corr!=null?corrGrid(lh,la,corr):ensembleGrid(lh,la,WEIGHTS,nu)),ens:true},
   ];
   const eq=s=>actual&&s.i===actual.i&&s.j===actual.j;
   const hitCls=mode==='final'?'won':mode==='live'?'livenow':'';
@@ -928,7 +980,7 @@ function renderDossier(){
   const f=F[active], th=T[f.h], ta=T[f.a];
   const t=TACT[f.id]||{};
   const fx=fxPredict(f);
-  const _bl=blendOutcome(outcomeProbs(ensembleGrid(fx.lh,fx.la,WEIGHTS,fx.nu)),f.mkt);
+  const _bl=blendOutcome(outcomeProbs(predGrid(fx.lh,fx.la,fx.nu)),f.mkt);
   const p={h:+(_bl.h*100).toFixed(1),d:+(_bl.d*100).toFixed(1),a:+(_bl.a*100).toFixed(1)};
   const edgeRow = (lab,hv,av,d)=>tapeRow(lab,hv,av,d);
   const intD=v=>String(Math.round(v));
@@ -1032,14 +1084,25 @@ function renderDossier(){
       </div>
     </div>
 
+    ${LINEUP_ON?`<div class="mod full">
+      <div class="modh">Lineup quality · core ratings (1–10, neutral 5.5)</div>
+      <div class="tactgrid">
+        <div class="srow"><label>${f.h} attack core <b class="sval" id="lq_laH">${(t.laH!=null?t.laH:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="laH" min="1" max="10" step="0.5" value="${t.laH!=null?t.laH:5.5}"></div>
+        <div class="srow"><label>${f.h} defence core <b class="sval" id="lq_ldH">${(t.ldH!=null?t.ldH:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="ldH" min="1" max="10" step="0.5" value="${t.ldH!=null?t.ldH:5.5}"></div>
+        <div class="srow"><label>${f.a} attack core <b class="sval" id="lq_laA">${(t.laA!=null?t.laA:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="laA" min="1" max="10" step="0.5" value="${t.laA!=null?t.laA:5.5}"></div>
+        <div class="srow"><label>${f.a} defence core <b class="sval" id="lq_ldA">${(t.ldA!=null?t.ldA:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="ldA" min="1" max="10" step="0.5" value="${t.ldA!=null?t.ldA:5.5}"></div>
+      </div>
+    </div>`:''}
+
     <div class="mod full sc">
       <div class="modh">Most likely scorelines · top 5</div>
-      ${scoreMatrix(f.h,f.a,fx.lh,fx.la,{mode:'pre',nu:fx.nu,note:`Model xG · ${f.h} ${fx.lh.toFixed(2)} | ${f.a} ${fx.la.toFixed(2)} · COM ν ${fx.nu.toFixed(2)}${ADV_ON?' · advanced-stats on':''}. Top ensemble score highlighted; weights above.`})}
+      ${scoreMatrix(f.h,f.a,fx.lh,fx.la,{mode:'pre',nu:fx.nu,corr:BIVAR_ON?BIVAR_RHO:null,note:`Model xG · ${f.h} ${fx.lh.toFixed(2)} | ${f.a} ${fx.la.toFixed(2)} · ν ${fx.nu.toFixed(2)}${BIVAR_ON?' · bivariate ρ '+BIVAR_RHO.toFixed(2):''}${JEOP_ON?' · jeopardy':''}${SCENARIO_ON?' · scenario':''}. Top ensemble score highlighted.`})}
     </div>
   </div>`;
   const d=document.getElementById('dossier');
   d.innerHTML=html;
   d.querySelectorAll('.tact').forEach(cb=>cb.addEventListener('change',ev=>{const ff=F[active];if(!ff)return;TACT[ff.id]=TACT[ff.id]||{};TACT[ff.id][ev.target.dataset.k]=ev.target.checked;renderDossier();}));
+  d.querySelectorAll('.lqr').forEach(sl=>{sl.addEventListener('input',ev=>{const ff=F[active];if(!ff)return;const k=ev.target.dataset.k;TACT[ff.id]=TACT[ff.id]||{};TACT[ff.id][k]=+ev.target.value;const lab=document.getElementById('lq_'+k);if(lab)lab.textContent=(+ev.target.value).toFixed(1);});sl.addEventListener('change',()=>renderDossier());});
   // restart entrance animation
   d.querySelector('.hero')?.parentElement;
   d.classList.remove('dossier');void d.offsetWidth;d.classList.add('dossier');
@@ -1092,6 +1155,16 @@ document.getElementById('sReset').addEventListener('click',()=>{COM_NU=1.0;syncS
 document.getElementById('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
 document.getElementById('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);document.getElementById('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
 document.getElementById('advToggle').addEventListener('change',e=>{ADV_ON=e.target.checked;lsSet('wc26.advon',ADV_ON);recompute();});
+(function(){
+  const bt=document.getElementById('bivarToggle'); if(bt)bt.addEventListener('change',e=>{BIVAR_ON=e.target.checked;lsSet('wc26.bivaron',BIVAR_ON);renderDossier();});
+  const bs=document.getElementById('bivarSlider'); if(bs)bs.addEventListener('input',e=>{BIVAR_RHO=+e.target.value/100;const v=document.getElementById('bivarv');if(v)v.textContent=BIVAR_RHO.toFixed(2);lsSet('wc26.bivarrho',BIVAR_RHO);renderDossier();});
+  const jt=document.getElementById('jeopToggle'); if(jt)jt.addEventListener('change',e=>{JEOP_ON=e.target.checked;lsSet('wc26.jeopon',JEOP_ON);renderDossier();});
+  const st=document.getElementById('scenToggle'); if(st)st.addEventListener('change',e=>{SCENARIO_ON=e.target.checked;lsSet('wc26.scenon',SCENARIO_ON);const ed=document.getElementById('scenedit');if(ed)ed.classList.toggle('on',SCENARIO_ON);renderDossier();});
+  const rs=document.getElementById('refSlider'); if(rs)rs.addEventListener('input',e=>{REF_STRICT=+e.target.value;const v=document.getElementById('refv');if(v)v.textContent=REF_STRICT;lsSet('wc26.ref',REF_STRICT);renderDossier();});
+  const ps=document.getElementById('pragSlider'); if(ps)ps.addEventListener('input',e=>{MGR_PRAG=+e.target.value;const v=document.getElementById('pragv');if(v)v.textContent=MGR_PRAG;lsSet('wc26.prag',MGR_PRAG);renderDossier();});
+  const lt=document.getElementById('lineupToggle'); if(lt)lt.addEventListener('change',e=>{LINEUP_ON=e.target.checked;lsSet('wc26.lineupon',LINEUP_ON);renderDossier();});
+  const lb=document.getElementById('lbetaSlider'); if(lb)lb.addEventListener('input',e=>{LINEUP_BETA=+e.target.value/100;const v=document.getElementById('lbetav');if(v)v.textContent=LINEUP_BETA.toFixed(2);lsSet('wc26.lbeta',LINEUP_BETA);renderDossier();});
+})();
 document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders);
 document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
 document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
