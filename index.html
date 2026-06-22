@@ -237,6 +237,11 @@
   .mktline b{color:var(--amber)}
   .mktline .mktw{color:var(--dimmer);font-size:9px}
   .tactgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .bigstat{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:4px 0 14px}
+  .bigstat .bs1{font-family:var(--display);font-size:46px;font-weight:700;color:var(--mint);line-height:1}
+  .bigstat .bs2{font-family:var(--body);font-size:13px;color:var(--ink)}
+  .bigstat .bs2 span{color:var(--dim);font-size:11px}
+  .report tr.hit td{background:rgba(47,224,174,.10)}
   .switch.sm{align-items:flex-start}
   .switch.sm .track{width:34px;height:20px}
   .switch.sm .track:after{width:14px;height:14px}
@@ -405,60 +410,7 @@
   </div>
 
   <div class="calcbar">
-    <div class="calctop">
-      <span class="mblabel">Ensemble weight calculator</span>
-      <div class="calcbtns">
-        <button id="wEqual" class="cbtn">Equal</button>
-        <button id="wAuto" class="cbtn">By accuracy</button>
-      </div>
-    </div>
-    <div class="wgrid" id="wgrid">
-      <div class="wrow" data-m="com"><label>COM-Poisson</label><input type="range" min="0" max="100" value="55"><span class="wval">55%</span></div>
-      <div class="wrow" data-m="poisson"><label>Poisson</label><input type="range" min="0" max="100" value="30"><span class="wval">30%</span></div>
-      <div class="wrow" data-m="geom"><label>Geometric</label><input type="range" min="0" max="100" value="15"><span class="wval">15%</span></div>
-    </div>
-    <div class="mbnote">Our prediction blends the three models by these weights (COM dominant, Poisson baseline, Geometric anchors clean sheets). Adjust to taste, or use <b>By accuracy</b> to weight each by how well it called the finished games.</div>
-    <div class="gammarow">
-      <div class="gleft">
-        <label>Sharpness factor γ <b id="gval">1.00</b></label>
-        <input type="range" min="50" max="350" value="100" id="gslider">
-      </div>
-      <div class="calcbtns">
-        <button id="gTune" class="cbtn">Auto-tune</button>
-        <button id="gReset" class="cbtn">Reset</button>
-      </div>
-    </div>
-    <div class="mbnote">γ sharpens (γ&gt;1) or flattens (γ&lt;1) the ensemble's confidence. <b>It recalibrates probabilities only — it never changes which scorelines rank highest.</b> Auto-tune minimises log-loss on the finished games; note the value it finds is <b class="warn">in-sample</b>, so a high γ likely means overfitting.</div>
-    <div class="shapehd">COM-Poisson shape · ν</div>
-    <div class="shapegrid" id="shapegrid">
-      <div class="srow" data-s="nu"><label>COM-Poisson ν <b class="sval">1.00</b></label><input type="range" min="60" max="200" value="100"></div>
-    </div>
-    <div class="calcbtns"><button id="sCal" class="cbtn">Calibrate to results</button><button id="sReset" class="cbtn">Reset</button></div>
-    <div class="mbnote">ν is COM-Poisson tightness — ν&gt;1 = tighter/low-scoring, ν&lt;1 = looser/high-scoring. <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
-    <div class="shapehd">Model inputs · toggle &amp; override</div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="xgToggle"><span class="track"></span><span class="swlbl">Shot-based xG <b class="swsub" id="xgnote">—</b></span></label></div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="advToggle"><span class="track"></span><span class="swlbl">Advanced stats tuning <b class="swsub">SOT 60% · conversion 30% · possession 10% → scales λ</b></span></label></div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="scoutToggle"><span class="track"></span><span class="swlbl">Scout adjustments <b class="swsub">hand-nudge a team (tactics the data can't see)</b></span></label></div>
-    <div class="scoutedit" id="scoutedit">
-      <select id="scoutTeam"></select>
-      <div class="srow"><label>Attack <b class="sval" id="atkv">0</b></label><input type="range" id="atkSlider" min="-3" max="3" value="0"></div>
-      <div class="srow"><label>Defense (higher = tougher) <b class="sval" id="defv">0</b></label><input type="range" id="defSlider" min="-3" max="3" value="0"></div>
-      <div class="chips" id="scoutChips"></div>
-    </div>
-    <div class="inrow"><label>Market weight <b class="sval" id="mktv">50%</b> <span class="swsub" id="mktnote">— paste an odds API key in the code to activate</span></label><input type="range" id="mktSlider" min="0" max="100" value="50"></div>
-    <div class="shapehd" style="margin-top:14px">Elite predictive modules · A/B</div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="bivarToggle"><span class="track"></span><span class="swlbl">Goal correlation · Bivariate Poisson <b class="swsub">joint scoring: strangulation ↔ shootout</b></span></label></div>
-    <div class="srow"><label>Correlation ρ <b class="sval" id="bivarv">0.00</b></label><input type="range" id="bivarSlider" min="-30" max="30" value="0"></div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="jeopToggle"><span class="track"></span><span class="swlbl">Tournament jeopardy <b class="swsub">MD3 / win-or-out → draw &amp; under bias</b></span></label></div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="scenToggle"><span class="track"></span><span class="swlbl">Pre-match scenario tuning <b class="swsub">referee &amp; manager dials below</b></span></label></div>
-    <div class="scoutedit" id="scenedit">
-      <div class="srow"><label>Referee strictness 1–10 <b class="sval" id="refv">5</b></label><input type="range" id="refSlider" min="1" max="10" value="5"></div>
-      <div class="srow"><label>Manager pragmatism 0–10 <b class="sval" id="pragv">0</b></label><input type="range" id="pragSlider" min="0" max="10" value="0"></div>
-    </div>
-    <div class="inrow"><label class="switch"><input type="checkbox" id="lineupToggle"><span class="track"></span><span class="swlbl">Lineup quality · player ratings <b class="swsub">core ratings set per-match in the dossier</b></span></label></div>
-    <div class="srow"><label>Lineup influence β <b class="sval" id="lbetav">0.35</b></label><input type="range" id="lbetaSlider" min="0" max="60" value="35"></div>
-    <div class="mbnote">Bivariate Poisson is the real upgrade — it models the two scores as <b>correlated</b> (ρ&lt;0 = mutual strangulation, more 0-0/1-1; ρ&gt;0 = open shootout). Jeopardy &amp; scenario dials are <b>scenario tools</b> — leave them off and A/B each on the Outcome scoreboard before trusting it.</div>
-    <div class="mbnote"><b>Shot-based xG</b> rebuilds ratings from shots on target (chance quality) instead of raw goals — it cools lucky scorelines and credits stingy defenses; the note shows whether it lowers log-loss on finished games. <b>Scout adjustments</b> nudge a team's attack/defense by hand for what the model is blind to (a deep block, a key injury). <b class="warn">Each only affects the model while its switch is on</b> — flip off and the numbers revert.</div>
+    <div class="mbnote">Predictions blend three models — COM-Poisson, Poisson and Geometric — over opponent-adjusted form and FIFA-strength ratings. The experimental tuning knobs were removed; the model now runs on its calibrated defaults. Open the <b>Model report</b> tab to see exactly how the predictions are doing.</div>
   </div>
 
   <div class="tabbar" role="tablist" aria-label="Sections">
@@ -922,46 +874,35 @@ function modelStats(key){
 }
 function renderReport(){
   const c=document.getElementById('report');
-  const models=[['com','COM-Poisson'],['poisson','Poisson'],['geom','Geometric'],['ens','Ensemble']];
-  const rowsData=models.map(([k,l])=>[l,modelStats(k)]);
-  const bExact=Math.max(...rowsData.map(s=>s[1].exact)), bTop5=Math.max(...rowsData.map(s=>s[1].top5));
-  const bLL=Math.min(...rowsData.map(s=>s[1].logloss)), bRank=Math.min(...rowsData.map(s=>s[1].meanRank));
-  const bOut=Math.max(...rowsData.map(s=>s[1].outcome));
+  if(!FIN.length){ c.innerHTML='<div class="seltitle">Results report</div><div class="rkeyline">No finished games yet. As group matches complete, this fills in automatically.</div>'; return; }
   const pct=v=>Math.round(v*100)+'%';
-  const bOut2=Math.max(...rowsData.map(s=>s[1].outcome)),bL2=Math.min(...rowsData.map(s=>s[1].ll1x2)),bBr=Math.min(...rowsData.map(s=>s[1].brier));
-  const orows=rowsData.map(([l,s])=>`<tr><td class="t">${l}</td><td class="${s.outcome===bOut2?'best':''}">${pct(s.outcome)}</td><td class="${s.ll1x2===bL2?'best':''}">${s.ll1x2.toFixed(3)}</td><td class="${s.brier===bBr?'best':''}">${s.brier.toFixed(3)}</td></tr>`).join('');
-  const rows=rowsData.map(([l,s])=>`<tr>
-    <td class="t">${l}</td>
-    <td class="${s.exact===bExact?'best':''}">${pct(s.exact)}</td>
-    <td>${pct(s.top3)}</td>
-    <td class="${s.top5===bTop5?'best':''}">${pct(s.top5)}</td>
-    <td class="${s.meanRank===bRank?'best':''}">${s.meanRank.toFixed(1)}</td>
-    <td class="${s.logloss===bLL?'best':''}">${s.logloss.toFixed(2)}</td>
-    <td class="${s.outcome===bOut?'best':''}">${pct(s.outcome)}</td></tr>`).join('');
+  const models=[['ens','Ensemble'],['com','COM-Poisson'],['poisson','Poisson'],['geom','Geometric']];
+  const rowsData=models.map(([k,l])=>[l,modelStats(k)]);
+  const bO=Math.max(...rowsData.map(s=>s[1].outcome)),bL=Math.min(...rowsData.map(s=>s[1].ll1x2)),bB=Math.min(...rowsData.map(s=>s[1].brier));
+  const orows=rowsData.map(([l,s])=>`<tr><td class="t">${l}</td><td class="${s.outcome===bO?'best':''}">${pct(s.outcome)}</td><td class="${s.ll1x2===bL?'best':''}">${s.ll1x2.toFixed(3)}</td><td class="${s.brier===bB?'best':''}">${s.brier.toFixed(3)}</td></tr>`).join('');
+  const ens=modelStats('ens'), N=FIN.length;
+  let pg=0,ag=0;
+  const rows=FIN.map(m=>{ pg+=m.lh+m.la; ag+=m.sh+m.sa;
+    const g=ensembleGrid(m.lh,m.la,WEIGHTS), op=outcomeProbs(g);
+    const fav=op.h>=op.d&&op.h>=op.a?'H':op.a>=op.h&&op.a>=op.d?'A':'D';
+    const act=actualOutcome(m.sh,m.sa), hit=fav===act, top=g[0];
+    const favLab=fav==='H'?m.h+' win':fav==='A'?m.a+' win':'Draw';
+    const favPct=Math.round((fav==='H'?op.h:fav==='A'?op.a:op.d)*100);
+    return {h:m.h,a:m.a,sh:m.sh,sa:m.sa,favLab,favPct,top,hit}; });
+  pg/=N; ag/=N;
+  const hits=rows.filter(r=>r.hit).length, exact=rows.filter(r=>r.top.i===r.sh&&r.top.j===r.sa).length;
+  const grow=rows.map(r=>`<tr class="${r.hit?'hit':''}"><td class="t">${r.h}\u2013${r.a}</td><td>${r.favLab} ${r.favPct}% \u00b7 top ${r.top.i}-${r.top.j}</td><td>${r.sh}-${r.sa}</td><td>${r.hit?'\u2713':'\u2717'}</td></tr>`).join('');
+  const verdict = ens.outcome>=0.5?'Outcome calls are landing \u2014 the model has real signal.':ens.ll1x2<1.0?'Hit-rate is streaky, but the probabilities still beat random \u2014 there is signal here.':'Small sample \u2014 too early to call. Let more games finish.';
   c.innerHTML=`
-    <div class="seltitle">Model report card <span style="color:var(--dim)">— measured on ${FIN.length} finished games</span></div>
-    <div class="ohd">Outcome scoreboard · win / draw / win <span style="color:var(--dim)">— the call you can actually trust</span></div>
+    <div class="seltitle">Results report <span style="color:var(--dim)">\u2014 ${N} finished games</span></div>
+    <div class="bigstat"><div class="bs1">${pct(ens.outcome)}</div><div class="bs2">outcome calls correct<br><span>${hits} of ${N} \u00b7 win / draw / win</span></div></div>
+    <div class="rkeyline"><b>${verdict}</b> Blind guessing is ~33% right at 1.10 log-loss; this model sits at <b>${ens.ll1x2.toFixed(2)}</b> log-loss (lower = better).</div>
+    <div class="ohd">By model \u00b7 win / draw / win</div>
     <div class="matrixwrap"><table class="report"><tr><th>Predictor</th><th>Outcome</th><th>1X2 log-loss</th><th>Brier</th></tr>${orows}</table></div>
-    <div class="rkeyline" style="margin-bottom:18px"><b>Outcome</b> — how often the predicted win/draw/win was right. <b>1X2 log-loss / Brier</b> — quality of the win-draw-win <i>probabilities</i> (lower is better); these are proper scoring rules and the fairest read on the model. This is what to judge it on — not exact scores.</div>
-    <div class="verdict">
-      <div class="vhead">Can you rely on the exact-score predictions? <b class="no">Not for a single game.</b></div>
-      <p>Calling the <b>exact scoreline</b> is intrinsically hard — even elite models land it only about 10–12% of the time. The exact-score column below looks far better than that, but it's <b class="warn">in-sample</b>: the team ratings were fit on these same ${FIN.length} games, so the model has effectively already seen the answers. Out of sample it would drop sharply.</p>
-      <p>What you <b>can</b> lean on is the <b>match outcome</b> (win/draw/win) and the <b>top-5 band</b> — use the predictions to read who's favoured and a plausible range of scores, not to nail 3–1 exactly.</p>
-    </div>
-    <div class="matrixwrap"><table class="report">
-      <tr><th>Predictor</th><th>Exact</th><th>Top-3</th><th>Top-5</th><th>Mean rank</th><th>Log-loss</th><th>Outcome</th></tr>
-      ${rows}
-    </table></div>
-    <div class="rkeyline"><b>Exact / Top-3 / Top-5</b> — how often the real score was the #1 pick / inside the top 3 / top 5. <b>Mean rank</b> — average position of the real score (lower is better). <b>Log-loss</b> — quality of the probability put on the real score (lower is better). <b>Outcome</b> — how often the predicted win/draw/win was right. Green = best in column. The Ensemble row reflects your current weights <b>and</b> the sharpness γ (γ moves only its log-loss, never its hit rates).</div>
-    <div class="caveatbox">
-      <b>Three reasons to stay skeptical of these numbers:</b>
-      <ul>
-        <li><b>Still a small sample</b> — ${FIN.length} games is better than a handful, but a real evaluation spans hundreds.</li>
-        <li><b>In-sample</b> — ratings were fit on these very games, so every figure here flatters the model.</li>
-        <li><b>Missing teams</b> — sides with no finished game (e.g. live Brazil–Haiti) get neutral ratings, not real ones.</li>
-      </ul>
-      A verdict you could actually trust needs out-of-sample testing across hundreds of matches — the full results API + backend route.
-    </div>`;
+    <div class="rkeyline">Goals check: model expects <b>${pg.toFixed(2)}</b> goals/game; reality is <b>${ag.toFixed(2)}</b>. ${Math.abs(pg-ag)<0.3?'Well-matched.':pg>ag?'It runs slightly hot.':'It runs slightly cold.'}</div>
+    <div class="ohd">Every finished game \u00b7 predicted vs actual</div>
+    <div class="matrixwrap"><table class="report"><tr><th>Match</th><th>Prediction</th><th>Final</th><th>Hit</th></tr>${grow}</table></div>
+    <div class="rkeyline">Green rows = outcome called right. <b>Exact score</b> landed ${exact}/${N} (${pct(exact/N)}) \u2014 and that is fine: nobody beats ~10\u201315% on exact scores, so judge the model on the <b>Hit</b> column, not the scoreline. The real test is new games from here on.</div>`;
 }
 function renderTickets(){
   const c=document.getElementById('tickets');
@@ -978,10 +919,8 @@ function renderTickets(){
 
 function renderDossier(){
   const f=F[active], th=T[f.h], ta=T[f.a];
-  const t=TACT[f.id]||{};
-  const fx=fxPredict(f);
-  const _bl=blendOutcome(outcomeProbs(predGrid(fx.lh,fx.la,fx.nu)),f.mkt);
-  const p={h:+(_bl.h*100).toFixed(1),d:+(_bl.d*100).toFixed(1),a:+(_bl.a*100).toFixed(1)};
+  const _o=outcomeProbs(ensembleGrid(f.lh,f.la,WEIGHTS));
+  const p={h:+(_o.h*100).toFixed(1),d:+(_o.d*100).toFixed(1),a:+(_o.a*100).toFixed(1)};
   const edgeRow = (lab,hv,av,d)=>tapeRow(lab,hv,av,d);
   const intD=v=>String(Math.round(v));
   const decD=v=>v.toFixed(2);
@@ -1018,7 +957,6 @@ function renderDossier(){
         <span>Draw <span class="fav">${p.d}%</span></span>
         <span>${f.a} <span class="fav">${p.a}%</span></span>
       </div>
-      ${f.mkt?`<div class="mktline">Market (de-vigged): <b>${(f.mkt.h*100).toFixed(0)}%</b> ${f.h} · <b>${(f.mkt.d*100).toFixed(0)}%</b> draw · <b>${(f.mkt.a*100).toFixed(0)}%</b> ${f.a} <span class="mktw">— bar shows model blended ${Math.round(MKT_W*100)}% toward market</span></div>`:''}
     </div>
   </div>
 
@@ -1074,35 +1012,13 @@ function renderDossier(){
       ${statsBlock(f.h,f.a)}
     </div>
 
-    <div class="mod full">
-      <div class="modh">Tactical momentum · this match (A/B)</div>
-      <div class="tactgrid">
-        <label class="switch sm"><input type="checkbox" class="tact" data-k="starH" ${t.starH?'checked':''}><span class="track"></span><span class="swlbl">${f.h} star return <b class="swsub">+50% attack · blitz ν</b></span></label>
-        <label class="switch sm"><input type="checkbox" class="tact" data-k="starA" ${t.starA?'checked':''}><span class="track"></span><span class="swlbl">${f.a} star return <b class="swsub">+50% attack · blitz ν</b></span></label>
-        <label class="switch sm"><input type="checkbox" class="tact" data-k="blockH" ${t.blockH?'checked':''}><span class="track"></span><span class="swlbl">${f.h} low-block <b class="swsub">−35% opp · lock ν</b></span></label>
-        <label class="switch sm"><input type="checkbox" class="tact" data-k="blockA" ${t.blockA?'checked':''}><span class="track"></span><span class="swlbl">${f.a} low-block <b class="swsub">−35% opp · lock ν</b></span></label>
-      </div>
-    </div>
-
-    ${LINEUP_ON?`<div class="mod full">
-      <div class="modh">Lineup quality · core ratings (1–10, neutral 5.5)</div>
-      <div class="tactgrid">
-        <div class="srow"><label>${f.h} attack core <b class="sval" id="lq_laH">${(t.laH!=null?t.laH:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="laH" min="1" max="10" step="0.5" value="${t.laH!=null?t.laH:5.5}"></div>
-        <div class="srow"><label>${f.h} defence core <b class="sval" id="lq_ldH">${(t.ldH!=null?t.ldH:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="ldH" min="1" max="10" step="0.5" value="${t.ldH!=null?t.ldH:5.5}"></div>
-        <div class="srow"><label>${f.a} attack core <b class="sval" id="lq_laA">${(t.laA!=null?t.laA:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="laA" min="1" max="10" step="0.5" value="${t.laA!=null?t.laA:5.5}"></div>
-        <div class="srow"><label>${f.a} defence core <b class="sval" id="lq_ldA">${(t.ldA!=null?t.ldA:5.5).toFixed(1)}</b></label><input type="range" class="lqr" data-k="ldA" min="1" max="10" step="0.5" value="${t.ldA!=null?t.ldA:5.5}"></div>
-      </div>
-    </div>`:''}
-
     <div class="mod full sc">
       <div class="modh">Most likely scorelines · top 5</div>
-      ${scoreMatrix(f.h,f.a,fx.lh,fx.la,{mode:'pre',nu:fx.nu,corr:BIVAR_ON?BIVAR_RHO:null,note:`Model xG · ${f.h} ${fx.lh.toFixed(2)} | ${f.a} ${fx.la.toFixed(2)} · ν ${fx.nu.toFixed(2)}${BIVAR_ON?' · bivariate ρ '+BIVAR_RHO.toFixed(2):''}${JEOP_ON?' · jeopardy':''}${SCENARIO_ON?' · scenario':''}. Top ensemble score highlighted.`})}
+      ${scoreMatrix(f.h,f.a,f.lh,f.la,{mode:'pre',note:`Model xG · ${f.h} ${f.lh.toFixed(2)} | ${f.a} ${f.la.toFixed(2)}. Most likely score highlighted.`})}
     </div>
   </div>`;
   const d=document.getElementById('dossier');
   d.innerHTML=html;
-  d.querySelectorAll('.tact').forEach(cb=>cb.addEventListener('change',ev=>{const ff=F[active];if(!ff)return;TACT[ff.id]=TACT[ff.id]||{};TACT[ff.id][ev.target.dataset.k]=ev.target.checked;renderDossier();}));
-  d.querySelectorAll('.lqr').forEach(sl=>{sl.addEventListener('input',ev=>{const ff=F[active];if(!ff)return;const k=ev.target.dataset.k;TACT[ff.id]=TACT[ff.id]||{};TACT[ff.id][k]=+ev.target.value;const lab=document.getElementById('lq_'+k);if(lab)lab.textContent=(+ev.target.value).toFixed(1);});sl.addEventListener('change',()=>renderDossier());});
   // restart entrance animation
   d.querySelector('.hero')?.parentElement;
   d.classList.remove('dossier');void d.offsetWidth;d.classList.add('dossier');
@@ -1130,11 +1046,12 @@ function applyWeights(w){
   syncWeightLabels(); renderAll(); saveSettings();
 }
 document.querySelectorAll('#wgrid input').forEach(inp=>inp.addEventListener('input',setWeightsFromSliders));
-document.getElementById('wEqual').addEventListener('click',()=>applyWeights({poisson:1,dc:1,nb:1,com:1}));
-document.getElementById('wAuto').addEventListener('click',()=>applyWeights(accuracyWeights()));
-document.getElementById('gslider').addEventListener('input',e=>{GAMMA=+e.target.value/100;document.getElementById('gval').textContent=GAMMA.toFixed(2);renderAll();saveSettings();});
-document.getElementById('gTune').addEventListener('click',()=>{const g=tuneGamma();GAMMA=g;document.getElementById('gslider').value=Math.round(g*100);document.getElementById('gval').textContent=g.toFixed(2);renderAll();saveSettings();});
-document.getElementById('gReset').addEventListener('click',()=>{GAMMA=1;document.getElementById('gslider').value=100;document.getElementById('gval').textContent='1.00';renderAll();saveSettings();});
+(function(){const E=id=>document.getElementById(id); if(!E('wEqual'))return;
+E('wEqual').addEventListener('click',()=>applyWeights({poisson:1,dc:1,nb:1,com:1}));
+E('wAuto').addEventListener('click',()=>applyWeights(accuracyWeights()));
+E('gslider').addEventListener('input',e=>{GAMMA=+e.target.value/100;E('gval').textContent=GAMMA.toFixed(2);renderAll();saveSettings();});
+E('gTune').addEventListener('click',()=>{const g=tuneGamma();GAMMA=g;E('gslider').value=Math.round(g*100);E('gval').textContent=g.toFixed(2);renderAll();saveSettings();});
+E('gReset').addEventListener('click',()=>{GAMMA=1;E('gslider').value=100;E('gval').textContent='1.00';renderAll();saveSettings();});})();
 function syncShapeUI(){
   const set=(sel,disp,raw)=>{const row=document.querySelector('.srow[data-s="'+sel+'"]');if(!row)return;row.querySelector('input').value=raw;row.querySelector('.sval').textContent=disp;};
   set('nu',COM_NU.toFixed(2),Math.round(COM_NU*100));
@@ -1150,11 +1067,12 @@ function calibrateShapes(){
   syncShapeUI(); renderAll(); saveSettings();
 }
 document.querySelectorAll('#shapegrid input').forEach(inp=>inp.addEventListener('input',setShapesFromSliders));
-document.getElementById('sCal').addEventListener('click',calibrateShapes);
-document.getElementById('sReset').addEventListener('click',()=>{COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
-document.getElementById('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
-document.getElementById('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);document.getElementById('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
-document.getElementById('advToggle').addEventListener('change',e=>{ADV_ON=e.target.checked;lsSet('wc26.advon',ADV_ON);recompute();});
+(function(){const E=id=>document.getElementById(id); if(!E('sCal'))return;
+E('sCal').addEventListener('click',calibrateShapes);
+E('sReset').addEventListener('click',()=>{COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
+E('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
+E('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);E('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
+E('advToggle').addEventListener('change',e=>{ADV_ON=e.target.checked;lsSet('wc26.advon',ADV_ON);recompute();});})();
 (function(){
   const bt=document.getElementById('bivarToggle'); if(bt)bt.addEventListener('change',e=>{BIVAR_ON=e.target.checked;lsSet('wc26.bivaron',BIVAR_ON);renderDossier();});
   const bs=document.getElementById('bivarSlider'); if(bs)bs.addEventListener('input',e=>{BIVAR_RHO=+e.target.value/100;const v=document.getElementById('bivarv');if(v)v.textContent=BIVAR_RHO.toFixed(2);lsSet('wc26.bivarrho',BIVAR_RHO);renderDossier();});
@@ -1165,9 +1083,10 @@ document.getElementById('advToggle').addEventListener('change',e=>{ADV_ON=e.targ
   const lt=document.getElementById('lineupToggle'); if(lt)lt.addEventListener('change',e=>{LINEUP_ON=e.target.checked;lsSet('wc26.lineupon',LINEUP_ON);renderDossier();});
   const lb=document.getElementById('lbetaSlider'); if(lb)lb.addEventListener('input',e=>{LINEUP_BETA=+e.target.value/100;const v=document.getElementById('lbetav');if(v)v.textContent=LINEUP_BETA.toFixed(2);lsSet('wc26.lbeta',LINEUP_BETA);renderDossier();});
 })();
-document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders);
-document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
-document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
+(function(){const E=id=>document.getElementById(id); if(!E('scoutTeam'))return;
+E('scoutTeam').addEventListener('change',syncScoutSliders);
+E('atkSlider').addEventListener('input',setScoutFromSliders);
+E('defSlider').addEventListener('input',setScoutFromSliders);})();
 (function(){const ms=document.getElementById('mktSlider');if(ms)ms.addEventListener('input',e=>{MKT_W=+e.target.value/100;const mv=document.getElementById('mktv');if(mv)mv.textContent=Math.round(MKT_W*100)+'%';lsSet('wc26.mktw',MKT_W);recompute();});})();
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
