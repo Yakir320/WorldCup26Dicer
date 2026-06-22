@@ -233,21 +233,6 @@
   .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
   .chip{font-family:var(--mono);font-size:10px;padding:4px 9px;border-radius:20px;background:rgba(242,193,78,.12);border:1px solid rgba(242,193,78,.4);color:var(--amber);cursor:pointer}
   .chipnone{font-family:var(--mono);font-size:10px;color:var(--dimmer)}
-  .mktline{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--ink);padding-top:9px;border-top:1px solid var(--line)}
-  .mktline b{color:var(--amber)}
-  .mktline .mktw{color:var(--dimmer);font-size:9px}
-  .tactgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-  .bigstat{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:4px 0 14px}
-  .bigstat .bs1{font-family:var(--display);font-size:46px;font-weight:700;color:var(--mint);line-height:1}
-  .bigstat .bs2{font-family:var(--body);font-size:13px;color:var(--ink)}
-  .bigstat .bs2 span{color:var(--dim);font-size:11px}
-  .report tr.hit td{background:rgba(47,224,174,.10)}
-  .switch.sm{align-items:flex-start}
-  .switch.sm .track{width:34px;height:20px}
-  .switch.sm .track:after{width:14px;height:14px}
-  .switch.sm input:checked + .track:after{transform:translateX(14px)}
-  .switch.sm .swlbl{font-size:10px}
-  @media(max-width:520px){ .tactgrid{grid-template-columns:1fr} }
   /* scoreline matrix */
   .matrixwrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   table.matrix{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}
@@ -410,7 +395,49 @@
   </div>
 
   <div class="calcbar">
-    <div class="mbnote">Predictions blend three models — COM-Poisson, Poisson and Geometric — over opponent-adjusted form and FIFA-strength ratings. The experimental tuning knobs were removed; the model now runs on its calibrated defaults. Open the <b>Model report</b> tab to see exactly how the predictions are doing.</div>
+    <div class="calctop">
+      <span class="mblabel">Ensemble weight calculator</span>
+      <div class="calcbtns">
+        <button id="wEqual" class="cbtn">Equal</button>
+        <button id="wAuto" class="cbtn">By accuracy</button>
+      </div>
+    </div>
+    <div class="wgrid" id="wgrid">
+      <div class="wrow" data-m="poisson"><label>Poisson</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
+      <div class="wrow" data-m="dc"><label>Dixon-Coles</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
+      <div class="wrow" data-m="nb"><label>Neg. Binomial</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
+      <div class="wrow" data-m="com"><label>COM-Poisson</label><input type="range" min="0" max="100" value="25"><span class="wval">25%</span></div>
+    </div>
+    <div class="mbnote">Our prediction blends all four models by these weights. Adjust to taste, or use <b>By accuracy</b> to weight each by how well it called the finished games.</div>
+    <div class="gammarow">
+      <div class="gleft">
+        <label>Sharpness factor γ <b id="gval">1.00</b></label>
+        <input type="range" min="50" max="350" value="100" id="gslider">
+      </div>
+      <div class="calcbtns">
+        <button id="gTune" class="cbtn">Auto-tune</button>
+        <button id="gReset" class="cbtn">Reset</button>
+      </div>
+    </div>
+    <div class="mbnote">γ sharpens (γ&gt;1) or flattens (γ&lt;1) the ensemble's confidence. <b>It recalibrates probabilities only — it never changes which scorelines rank highest.</b> Auto-tune minimises log-loss on the finished games; note the value it finds is <b class="warn">in-sample</b>, so a high γ likely means overfitting.</div>
+    <div class="shapehd">Per-model shape · the "magic numbers"</div>
+    <div class="shapegrid" id="shapegrid">
+      <div class="srow" data-s="rho"><label>Dixon-Coles ρ <b class="sval">-0.12</b></label><input type="range" min="-25" max="25" value="-12"></div>
+      <div class="srow" data-s="nbr"><label>Neg-Binom r <b class="sval">14</b></label><input type="range" min="2" max="60" value="14"></div>
+      <div class="srow" data-s="nu"><label>COM-Poisson ν <b class="sval">1.00</b></label><input type="range" min="60" max="200" value="100"></div>
+    </div>
+    <div class="calcbtns"><button id="sCal" class="cbtn">Calibrate to results</button><button id="sReset" class="cbtn">Reset</button></div>
+    <div class="mbnote">ρ tweaks low-score/draw balance · r is Neg-Binom spread (high r ≈ Poisson) · ν is COM-Poisson tightness (ν&gt;1 fits football's clustered scores). <b>Calibrate</b> finds the values that best fit the finished games — but that's <b class="warn">in-sample on ~30 games</b>, so it overfits (it'll push ν high). Treat it as a starting point and sanity-check in the Model report.</div>
+    <div class="shapehd">Model inputs · toggle &amp; override</div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="xgToggle"><span class="track"></span><span class="swlbl">Shot-based xG <b class="swsub" id="xgnote">—</b></span></label></div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="scoutToggle"><span class="track"></span><span class="swlbl">Scout adjustments <b class="swsub">hand-nudge a team (tactics the data can't see)</b></span></label></div>
+    <div class="scoutedit" id="scoutedit">
+      <select id="scoutTeam"></select>
+      <div class="srow"><label>Attack <b class="sval" id="atkv">0</b></label><input type="range" id="atkSlider" min="-3" max="3" value="0"></div>
+      <div class="srow"><label>Defense (higher = tougher) <b class="sval" id="defv">0</b></label><input type="range" id="defSlider" min="-3" max="3" value="0"></div>
+      <div class="chips" id="scoutChips"></div>
+    </div>
+    <div class="mbnote"><b>Shot-based xG</b> rebuilds ratings from shots on target (chance quality) instead of raw goals — it cools lucky scorelines and credits stingy defenses; the note shows whether it lowers log-loss on finished games. <b>Scout adjustments</b> nudge a team's attack/defense by hand for what the model is blind to (a deep block, a key injury). <b class="warn">Each only affects the model while its switch is on</b> — flip off and the numbers revert.</div>
   </div>
 
   <div class="tabbar" role="tablist" aria-label="Sections">
@@ -563,39 +590,20 @@ function keyRead(h,a,th,ta,p){
 const ord=n=>['','1st','2nd','3rd','4th'][n]||n+'th';
 
 /* ---------- scoreline odds: Poisson · Dixon-Coles · Neg. Binomial · COM-Poisson · Ensemble ---------- */
-let COM_NU=1.0;
-const MODELS=['com','poisson','geom'];
-let WEIGHTS={com:55,poisson:30,geom:15};   // raw ensemble weights (normalized on use)
+let DC_RHO=-0.12, NB_R=14, COM_NU=1.0;
+const MODELS=['poisson','dc','nb','com'];
+let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.mktw',MKT_W);lsSet('wc26.advon',ADV_ON);lsSet('wc26.bivaron',BIVAR_ON);lsSet('wc26.bivarrho',BIVAR_RHO);lsSet('wc26.jeopon',JEOP_ON);lsSet('wc26.scenon',SCENARIO_ON);lsSet('wc26.ref',REF_STRICT);lsSet('wc26.prag',MGR_PRAG);lsSet('wc26.lineupon',LINEUP_ON);lsSet('wc26.lbeta',LINEUP_BETA);}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);}
 function loadSettings(){
   const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
   const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
-  const sh=lsGet('wc26.shape',null); if(sh&&typeof sh.nu==='number')COM_NU=sh.nu;
+  const sh=lsGet('wc26.shape',null); if(sh){if(typeof sh.rho==='number')DC_RHO=sh.rho;if(typeof sh.nbr==='number')NB_R=sh.nbr;if(typeof sh.nu==='number')COM_NU=sh.nu;}
   USE_XG=lsGet('wc26.usexg',false); SCOUT_ON=lsGet('wc26.scouton',false); SCOUT=lsGet('wc26.scout',{})||{};
   const xt=document.getElementById('xgToggle'); if(xt)xt.checked=USE_XG;
   const sct=document.getElementById('scoutToggle'); if(sct)sct.checked=SCOUT_ON;
   const sed=document.getElementById('scoutedit'); if(sed)sed.classList.toggle('on',SCOUT_ON);
-  ADV_ON=lsGet('wc26.advon',false);
-  const adt=document.getElementById('advToggle'); if(adt)adt.checked=ADV_ON;
-  BIVAR_ON=lsGet('wc26.bivaron',false); BIVAR_RHO=lsGet('wc26.bivarrho',0); JEOP_ON=lsGet('wc26.jeopon',false); SCENARIO_ON=lsGet('wc26.scenon',false); REF_STRICT=lsGet('wc26.ref',5); MGR_PRAG=lsGet('wc26.prag',0);
-  const _bt=document.getElementById('bivarToggle'); if(_bt)_bt.checked=BIVAR_ON;
-  const _bs=document.getElementById('bivarSlider'); if(_bs)_bs.value=Math.round(BIVAR_RHO*100);
-  const _bv=document.getElementById('bivarv'); if(_bv)_bv.textContent=BIVAR_RHO.toFixed(2);
-  const _jt=document.getElementById('jeopToggle'); if(_jt)_jt.checked=JEOP_ON;
-  const _st=document.getElementById('scenToggle'); if(_st)_st.checked=SCENARIO_ON;
-  const _se=document.getElementById('scenedit'); if(_se)_se.classList.toggle('on',SCENARIO_ON);
-  const _rs=document.getElementById('refSlider'); if(_rs)_rs.value=REF_STRICT; const _rv=document.getElementById('refv'); if(_rv)_rv.textContent=REF_STRICT;
-  const _ps=document.getElementById('pragSlider'); if(_ps)_ps.value=MGR_PRAG; const _pv=document.getElementById('pragv'); if(_pv)_pv.textContent=MGR_PRAG;
-  LINEUP_ON=lsGet('wc26.lineupon',false); LINEUP_BETA=lsGet('wc26.lbeta',0.35);
-  const _lt=document.getElementById('lineupToggle'); if(_lt)_lt.checked=LINEUP_ON;
-  const _lb=document.getElementById('lbetaSlider'); if(_lb)_lb.value=Math.round(LINEUP_BETA*100);
-  const _lv=document.getElementById('lbetav'); if(_lv)_lv.textContent=LINEUP_BETA.toFixed(2);
-  MKT_W=lsGet('wc26.mktw',0.5);
-  const ms2=document.getElementById('mktSlider'); if(ms2)ms2.value=Math.round(MKT_W*100);
-  const mv2=document.getElementById('mktv'); if(mv2)mv2.textContent=Math.round(MKT_W*100)+'%';
-  const mn2=document.getElementById('mktnote'); if(mn2&&ODDS_API_KEY)mn2.textContent='— live odds active';
   syncShapeUI();
   const mx=Math.max(...MODELS.map(m=>WEIGHTS[m]))||1;
   document.querySelectorAll('#wgrid .wrow').forEach(row=>{const inp=row.querySelector('input');if(inp)inp.value=Math.round(WEIGHTS[row.dataset.m]/mx*100);});
@@ -606,21 +614,9 @@ function loadSettings(){
 function savePred(id,lh,la,overwrite){if(!id)return;const m=lsGet('wc26.preds',{});if(m[id]&&!overwrite)return;m[id]={lh:+(+lh).toFixed(4),la:+(+la).toFixed(4)};lsSet('wc26.preds',m);}
 function loadPred(id){const m=lsGet('wc26.preds',{});return (m&&m[id])||null;}
 let USE_XG=false, SCOUT_ON=false, SCOUT={}, LAST_GAMES=[];
-const ODDS_API_KEY='';        // the-odds-api.com (free tier) -> market 1X2 blend
-// ===== premium data hooks — paste a key to activate (all optional) =====
-const FOOTBALL_API_KEY='';    // API-Football (api-football.com): lineups, player ratings, injuries
-const FOOTBALL_DATA_KEY='';   // Football-Data.org: fixtures, standings
-// Weather/altitude uses Open-Meteo (open-meteo.com) — FREE, NO KEY. Host-city elevations (m):
-const VENUE_ALT={ 'Mexico City':2240,'Guadalajara':1566,'Monterrey':540,'Atlanta':320,'Dallas':131,'Kansas City':265,'Denver':1609,'Houston':32,'Los Angeles':93,'San Francisco':16,'Seattle':54,'Boston':43,'Philadelphia':12,'New York':10,'Miami':2,'Toronto':76,'Vancouver':2 };
-async function fetchWeather(lat,lon){ try{const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+'&current=temperature_2m,relative_humidity_2m,wind_speed_10m'); if(!r.ok)return null; const j=await r.json(); return j.current||null; }catch(e){return null;} }
-let MARKET={}, MKT_W=0.5;
-let ADV_ON=false, TACT={};
-let BIVAR_ON=false, BIVAR_RHO=0, JEOP_ON=false, SCENARIO_ON=false, REF_STRICT=5, MGR_PRAG=0;
-let LINEUP_ON=false, LINEUP_BETA=0.35;
 function fact(n){let r=1;for(let i=2;i<=n;i++)r*=i;return r;}
 function comb(n,k){return fact(n)/(fact(k)*fact(n-k));}
 function pois(k,lam){return Math.exp(-lam)*Math.pow(lam,k)/fact(k);}
-function geom(k,mu){const p=1/(1+mu);return p*Math.pow(1-p,k);}
 function nb(k,mu,r){const p=r/(r+mu);return comb(k+r-1,k)*Math.pow(p,r)*Math.pow(1-p,k);}
 function dcTau(i,j,lh,la,rho){
   if(i===0&&j===0)return 1-lh*la*rho;
@@ -647,26 +643,30 @@ function outcomes(lh,la){let ph=0,pd=0,pa=0;for(let i=0;i<12;i++)for(let j=0;j<1
 function fitLambdas(pH,pD,pA){let best=null;for(let lh=0.1;lh<=4;lh+=0.04)for(let la=0.1;la<=4;la+=0.04){const[ph,pd,pa]=outcomes(lh,la);const e=(ph-pH)**2+(pd-pD)**2+(pa-pA)**2;if(!best||e<best.e)best={e,lh,la};}return best;}
 
 /* marginal goal pmf (0..9) for the separable models */
-function marg(mu,model,nu){
+function marg(mu,model){
   const a=[];
-  if(model==='geom'){for(let k=0;k<10;k++)a.push(geom(k,mu));}
-  else if(model==='com'){const v=nu||COM_NU;const p=comPmf(comRate(mu,v),v);for(let k=0;k<10;k++)a.push(p[k]);}
+  if(model==='nb'){for(let k=0;k<10;k++)a.push(nb(k,mu,NB_R));}
+  else if(model==='com'){const p=comPmf(comRate(mu,COM_NU),COM_NU);for(let k=0;k<10;k++)a.push(p[k]);}
   else{for(let k=0;k<10;k++)a.push(pois(k,mu));}
   return a;
 }
 /* full normalized scoreline grid for one model (shared xG, different distribution) */
-function gridFor(lh,la,model,nu){
+function gridFor(lh,la,model){
   const g=[]; let s=0;
-  const mh=marg(lh,model,nu), ma=marg(la,model,nu);
-  for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=mh[i]*ma[j];g.push({i,j,p});s+=p;}
+  if(model==='dc'){
+    for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=pois(i,lh)*pois(j,la)*dcTau(i,j,lh,la,DC_RHO);g.push({i,j,p});s+=p;}
+  }else{
+    const mh=marg(lh,model), ma=marg(la,model);
+    for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=mh[i]*ma[j];g.push({i,j,p});s+=p;}
+  }
   g.forEach(c=>c.p/=s); g.sort((x,y)=>y.p-x.p);
   return g;
 }
 /* weighted ensemble across all models */
 let GAMMA=1.0;   // ensemble sharpness factor ("magic number")
-function ensembleBase(lh,la,w,nu){
+function ensembleBase(lh,la,w){
   const sum=MODELS.reduce((a,m)=>a+w[m],0)||1, map={};
-  MODELS.forEach(m=>{const wt=w[m]/sum; gridFor(lh,la,m,nu).forEach(c=>{const k=c.i*100+c.j;(map[k]=map[k]||{i:c.i,j:c.j,p:0}).p+=wt*c.p;});});
+  MODELS.forEach(m=>{const wt=w[m]/sum; gridFor(lh,la,m).forEach(c=>{const k=c.i*100+c.j;(map[k]=map[k]||{i:c.i,j:c.j,p:0}).p+=wt*c.p;});});
   return Object.values(map);
 }
 function applyGamma(arr,g){
@@ -674,40 +674,7 @@ function applyGamma(arr,g){
   let Z=0; const out=arr.map(c=>{const p=Math.pow(c.p,g);Z+=p;return {i:c.i,j:c.j,p};});
   out.forEach(c=>c.p/=Z); return out.sort((a,b)=>b.p-a.p);
 }
-function ensembleGrid(lh,la,w,nu){ return applyGamma(ensembleBase(lh,la,w,nu), GAMMA); }
-function clampL(x){return Math.min(4,Math.max(0.05,x));}
-function _statAvg(k){const v=Object.values(TEAMSTATS||{}).filter(x=>x.games&&x[k]!=null).map(x=>x[k]);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;}
-function eAttack(ab){const t=(TEAMSTATS||{})[ab];if(!t)return 1;let sc=0,wt=0;const aS=_statAvg('sot'),aP=_statAvg('poss');
-  const convs=Object.values(TEAMSTATS||{}).filter(x=>x.games&&x.shots>0).map(x=>x.gf/x.shots);const aC=convs.length?convs.reduce((a,b)=>a+b,0)/convs.length:null;
-  if(t.sot!=null&&aS){sc+=0.6*(t.sot/aS);wt+=0.6;} const cv=t.shots>0?t.gf/t.shots:null; if(cv!=null&&aC){sc+=0.3*(cv/aC);wt+=0.3;} if(t.poss!=null&&aP){sc+=0.1*(t.poss/aP);wt+=0.1;}
-  return wt>0?sc/wt:1;}
-function eDefense(ab){const t=(TEAMSTATS||{})[ab];if(!t)return 1;let sc=0,wt=0;const aS=_statAvg('sotA')||_statAvg('sot'),aP=_statAvg('possA')||_statAvg('poss');
-  const convs=Object.values(TEAMSTATS||{}).filter(x=>x.games&&x.shotsA>0).map(x=>x.ga/x.shotsA);const aC=convs.length?convs.reduce((a,b)=>a+b,0)/convs.length:null;
-  if(t.sotA!=null&&aS){sc+=0.6*(t.sotA/aS);wt+=0.6;} const cv=t.shotsA>0?t.ga/t.shotsA:null; if(cv!=null&&aC){sc+=0.3*(cv/aC);wt+=0.3;} if(t.possA!=null&&aP){sc+=0.1*(t.possA/aP);wt+=0.1;}
-  return wt>0?sc/wt:1;}
-function advLambda(h,a,lh,la){ if(ADV_ON){ lh*=eAttack(h)*eDefense(a); la*=eAttack(a)*eDefense(h); } return {lh:clampL(lh),la:clampL(la)}; }
-function fxPredict(f){ let r=advLambda(f.h,f.a,f.lh,f.la),lh=r.lh,la=r.la; const t=TACT[f.id]||{};
-  if(t.starH)lh*=1.5; if(t.starA)la*=1.5; if(t.blockH)la*=0.65; if(t.blockA)lh*=0.65;
-  let nu=COM_NU; if(t.blockH||t.blockA)nu=1.6; else if(t.starH||t.starA)nu=0.65;
-  if(SCENARIO_ON){ if(MGR_PRAG>0)nu=Math.max(nu,1.0+MGR_PRAG*0.08); const rk=1+(REF_STRICT-5)*0.02; lh*=rk; la*=rk; }
-  if(JEOP_ON && T[f.h]&&T[f.a] && (T[f.h].pl||0)>=2 && (T[f.a].pl||0)>=2){ nu=Math.max(nu,1.5); lh*=0.92; la*=0.92; }
-  if(LINEUP_ON){ const laH=t.laH!=null?t.laH:5.5,ldH=t.ldH!=null?t.ldH:5.5,laA=t.laA!=null?t.laA:5.5,ldA=t.ldA!=null?t.ldA:5.5; lh*=lineupMult(laH,ldA); la*=lineupMult(laA,ldH); }
-  lh=clampL(lh); la=clampL(la); return {lh,la,nu}; }
-function bivpoisGrid(lh,la,l3){
-  l3=Math.max(0,Math.min(l3,Math.min(lh,la)-0.01)); const l1=Math.max(0.01,lh-l3),l2=Math.max(0.01,la-l3);
-  const g=[]; let s=0;
-  for(let x=0;x<10;x++)for(let y=0;y<10;y++){let p=0;const mm=Math.min(x,y);for(let k=0;k<=mm;k++)p+=pois(x-k,l1)*pois(y-k,l2)*pois(k,l3);g.push({i:x,j:y,p});s+=p;}
-  g.forEach(c=>c.p/=s); g.sort((a,b)=>b.p-a.p); return g;
-}
-function corrGrid(lh,la,rho){
-  if(rho>=0) return bivpoisGrid(lh,la,rho*Math.min(lh,la));
-  const g=[];let s=0;for(let i=0;i<10;i++)for(let j=0;j<10;j++){const p=pois(i,lh)*pois(j,la)*dcTau(i,j,lh,la,rho);g.push({i,j,p});s+=p;}
-  g.forEach(c=>c.p/=s);g.sort((a,b)=>b.p-a.p);return g;
-}
-function predGrid(lh,la,nu){ return BIVAR_ON?corrGrid(lh,la,BIVAR_RHO):ensembleGrid(lh,la,WEIGHTS,nu); }
-/* lineup quality: log-linear strength, exp(beta*(attackCore - oppDefenceCore)/5), clamped — can't explode */
-function lineupMult(att,oppDef){ const m=Math.exp(LINEUP_BETA*(att-oppDef)/5); return Math.min(1.7,Math.max(0.6,m)); }
-async function fetchLineups(fixtureId){ if(!FOOTBALL_API_KEY)return null; /* API-Football: GET /fixtures/lineups?fixture=ID + /players ratings; average attack core (FW+AM) & defence core (DF+DM+GK) to 1-10, write into TACT[id].laH/ldH/laA/ldA */ return null; }
+function ensembleGrid(lh,la,w){ return applyGamma(ensembleBase(lh,la,w), GAMMA); }
 /* find the sharpness that minimises ensemble log-loss across finished games (in-sample) */
 function tuneGamma(){
   const bases=FIN.map(m=>({b:ensembleBase(m.lh,m.la,WEIGHTS),sh:m.sh,sa:m.sa}));
@@ -730,12 +697,13 @@ function accuracyWeights(){
 }
 
 /* ---------- matrix: top-5 per model + ensemble; green on actual ---------- */
-function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note='',nu=null,corr=null}={}){
+function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note=''}={}){
   const cols=[
-    {key:'com',label:'COM',grid:gridFor(lh,la,'com',nu)},
-    {key:'poisson',label:'Pois',grid:gridFor(lh,la,'poisson',nu)},
-    {key:'geom',label:'Geom',grid:gridFor(lh,la,'geom',nu)},
-    {key:'ens',label:'Ens',grid:(corr!=null?corrGrid(lh,la,corr):ensembleGrid(lh,la,WEIGHTS,nu)),ens:true},
+    {key:'poisson',label:'Pois',grid:gridFor(lh,la,'poisson')},
+    {key:'dc',label:'D-C',grid:gridFor(lh,la,'dc')},
+    {key:'nb',label:'NB',grid:gridFor(lh,la,'nb')},
+    {key:'com',label:'COM',grid:gridFor(lh,la,'com')},
+    {key:'ens',label:'Ens',grid:ensembleGrid(lh,la,WEIGHTS),ens:true},
   ];
   const eq=s=>actual&&s.i===actual.i&&s.j===actual.j;
   const hitCls=mode==='final'?'won':mode==='live'?'livenow':'';
@@ -744,7 +712,7 @@ function scoreMatrix(h,a,lh,la,{actual=null,mode='pre',note='',nu=null,corr=null
   for(let r=0;r<5;r++){
     rows+=`<tr><td class="rkh">${r+1}</td>`;
     cols.forEach(c=>{
-      const s=c.grid[r], lean=s.i>s.j?'h':s.i<s.j?'a':'d', hit=eq(s)?hitCls:(!actual&&c.ens&&r===0?'won':'');
+      const s=c.grid[r], lean=s.i>s.j?'h':s.i<s.j?'a':'d', hit=eq(s)?hitCls:'';
       rows+=`<td class="mcell ${c.ens?'ens':''} ${hit}">
         <span class="msc ${lean}">${s.i}–${s.j}</span><span class="mp">${(s.p*100).toFixed(1)}%</span>
         ${eq(s)&&mode==='final'?'<span class="mck">✓</span>':''}${eq(s)&&mode==='live'?'<span class="mck live">●</span>':''}</td>`;
@@ -778,8 +746,12 @@ const FIN=[{"h":"MEX","a":"RSA","sh":2,"sa":0,"lh":1.684,"la":0.541},{"h":"KOR",
 /* ---------- in-play model: final = current score + remaining goals ---------- */
 function remainGrid(model,ch,ca,rlh,rla){
   const g=[]; let s=0;
-  const mh=marg(rlh,model), ma=marg(rla,model);
-  for(let kh=0;kh<10;kh++)for(let ka=0;ka<10;ka++){const p=mh[kh]*ma[ka];g.push({i:ch+kh,j:ca+ka,p});s+=p;}
+  if(model==='dc'){
+    for(let kh=0;kh<10;kh++)for(let ka=0;ka<10;ka++){const p=pois(kh,rlh)*pois(ka,rla)*dcTau(kh,ka,rlh,rla,DC_RHO);g.push({i:ch+kh,j:ca+ka,p});s+=p;}
+  }else{
+    const mh=marg(rlh,model), ma=marg(rla,model);
+    for(let kh=0;kh<10;kh++)for(let ka=0;ka<10;ka++){const p=mh[kh]*ma[ka];g.push({i:ch+kh,j:ca+ka,p});s+=p;}
+  }
   g.forEach(c=>c.p/=s); g.sort((x,y)=>y.p-x.p); return g;
 }
 function ensRemain(ch,ca,rlh,rla,w){
@@ -791,8 +763,9 @@ function inplayMatrix(m){
   const frac=Math.max(0,(90-m.min)/90), rlh=m.lh*frac, rla=m.la*frac;
   const cols=[
     {label:'Pois',grid:remainGrid('poisson',m.sh,m.sa,rlh,rla)},
+    {label:'D-C',grid:remainGrid('dc',m.sh,m.sa,rlh,rla)},
+    {label:'NB',grid:remainGrid('nb',m.sh,m.sa,rlh,rla)},
     {label:'COM',grid:remainGrid('com',m.sh,m.sa,rlh,rla)},
-    {label:'Geom',grid:remainGrid('geom',m.sh,m.sa,rlh,rla)},
     {label:'Ens',grid:ensRemain(m.sh,m.sa,rlh,rla,WEIGHTS),ens:true},
   ];
   const isCur=s=>s.i===m.sh&&s.j===m.sa;
@@ -858,51 +831,55 @@ function renderFinished(){
 function outcomeProbs(grid){let h=0,d=0,a=0;grid.forEach(c=>{if(c.i>c.j)h+=c.p;else if(c.i===c.j)d+=c.p;else a+=c.p;});return {h,d,a};}
 function actualOutcome(sh,sa){return sh>sa?'H':sa>sh?'A':'D';}
 function modelStats(key){
-  let t1=0,t3=0,t5=0,rk=0,ll=0,oc=0,ll2=0,br=0;
+  let t1=0,t3=0,t5=0,rk=0,ll=0,oc=0;
   FIN.forEach(m=>{
     const g = key==='ens' ? ensembleGrid(m.lh,m.la,WEIGHTS) : gridFor(m.lh,m.la,key);
     const idx=g.findIndex(s=>s.i===m.sh&&s.j===m.sa), rank=idx+1;
     if(rank===1)t1++; if(rank<=3)t3++; if(rank<=5)t5++;
     rk+=rank; ll+=-Math.log(g[idx].p);
     const op=outcomeProbs(g), pred=op.h>=op.d&&op.h>=op.a?'H':op.a>=op.h&&op.a>=op.d?'A':'D';
-    const act=actualOutcome(m.sh,m.sa); if(pred===act)oc++;
-    const tot=op.h+op.d+op.a||1, ph=op.h/tot, pd=op.d/tot, pa=op.a/tot, pAct=act==='H'?ph:act==='D'?pd:pa;
-    ll2+=-Math.log(Math.max(pAct,1e-9)); br+=(ph-(act==='H'?1:0))**2+(pd-(act==='D'?1:0))**2+(pa-(act==='A'?1:0))**2;
+    if(pred===actualOutcome(m.sh,m.sa))oc++;
   });
   const n=FIN.length;
-  return {exact:t1/n,top3:t3/n,top5:t5/n,meanRank:rk/n,logloss:ll/n,outcome:oc/n,ll1x2:ll2/n,brier:br/n};
+  return {exact:t1/n,top3:t3/n,top5:t5/n,meanRank:rk/n,logloss:ll/n,outcome:oc/n};
 }
 function renderReport(){
   const c=document.getElementById('report');
-  if(!FIN.length){ c.innerHTML='<div class="seltitle">Results report</div><div class="rkeyline">No finished games yet. As group matches complete, this fills in automatically.</div>'; return; }
-  const pct=v=>Math.round(v*100)+'%';
-  const models=[['ens','Ensemble'],['com','COM-Poisson'],['poisson','Poisson'],['geom','Geometric']];
+  const models=[['poisson','Poisson'],['dc','Dixon-Coles'],['nb','Neg. Binomial'],['com','COM-Poisson'],['ens','Ensemble']];
   const rowsData=models.map(([k,l])=>[l,modelStats(k)]);
-  const bO=Math.max(...rowsData.map(s=>s[1].outcome)),bL=Math.min(...rowsData.map(s=>s[1].ll1x2)),bB=Math.min(...rowsData.map(s=>s[1].brier));
-  const orows=rowsData.map(([l,s])=>`<tr><td class="t">${l}</td><td class="${s.outcome===bO?'best':''}">${pct(s.outcome)}</td><td class="${s.ll1x2===bL?'best':''}">${s.ll1x2.toFixed(3)}</td><td class="${s.brier===bB?'best':''}">${s.brier.toFixed(3)}</td></tr>`).join('');
-  const ens=modelStats('ens'), N=FIN.length;
-  let pg=0,ag=0;
-  const rows=FIN.map(m=>{ pg+=m.lh+m.la; ag+=m.sh+m.sa;
-    const g=ensembleGrid(m.lh,m.la,WEIGHTS), op=outcomeProbs(g);
-    const fav=op.h>=op.d&&op.h>=op.a?'H':op.a>=op.h&&op.a>=op.d?'A':'D';
-    const act=actualOutcome(m.sh,m.sa), hit=fav===act, top=g[0];
-    const favLab=fav==='H'?m.h+' win':fav==='A'?m.a+' win':'Draw';
-    const favPct=Math.round((fav==='H'?op.h:fav==='A'?op.a:op.d)*100);
-    return {h:m.h,a:m.a,sh:m.sh,sa:m.sa,favLab,favPct,top,hit}; });
-  pg/=N; ag/=N;
-  const hits=rows.filter(r=>r.hit).length, exact=rows.filter(r=>r.top.i===r.sh&&r.top.j===r.sa).length;
-  const grow=rows.map(r=>`<tr class="${r.hit?'hit':''}"><td class="t">${r.h}\u2013${r.a}</td><td>${r.favLab} ${r.favPct}% \u00b7 top ${r.top.i}-${r.top.j}</td><td>${r.sh}-${r.sa}</td><td>${r.hit?'\u2713':'\u2717'}</td></tr>`).join('');
-  const verdict = ens.outcome>=0.5?'Outcome calls are landing \u2014 the model has real signal.':ens.ll1x2<1.0?'Hit-rate is streaky, but the probabilities still beat random \u2014 there is signal here.':'Small sample \u2014 too early to call. Let more games finish.';
+  const bExact=Math.max(...rowsData.map(s=>s[1].exact)), bTop5=Math.max(...rowsData.map(s=>s[1].top5));
+  const bLL=Math.min(...rowsData.map(s=>s[1].logloss)), bRank=Math.min(...rowsData.map(s=>s[1].meanRank));
+  const bOut=Math.max(...rowsData.map(s=>s[1].outcome));
+  const pct=v=>Math.round(v*100)+'%';
+  const rows=rowsData.map(([l,s])=>`<tr>
+    <td class="t">${l}</td>
+    <td class="${s.exact===bExact?'best':''}">${pct(s.exact)}</td>
+    <td>${pct(s.top3)}</td>
+    <td class="${s.top5===bTop5?'best':''}">${pct(s.top5)}</td>
+    <td class="${s.meanRank===bRank?'best':''}">${s.meanRank.toFixed(1)}</td>
+    <td class="${s.logloss===bLL?'best':''}">${s.logloss.toFixed(2)}</td>
+    <td class="${s.outcome===bOut?'best':''}">${pct(s.outcome)}</td></tr>`).join('');
   c.innerHTML=`
-    <div class="seltitle">Results report <span style="color:var(--dim)">\u2014 ${N} finished games</span></div>
-    <div class="bigstat"><div class="bs1">${pct(ens.outcome)}</div><div class="bs2">outcome calls correct<br><span>${hits} of ${N} \u00b7 win / draw / win</span></div></div>
-    <div class="rkeyline"><b>${verdict}</b> Blind guessing is ~33% right at 1.10 log-loss; this model sits at <b>${ens.ll1x2.toFixed(2)}</b> log-loss (lower = better).</div>
-    <div class="ohd">By model \u00b7 win / draw / win</div>
-    <div class="matrixwrap"><table class="report"><tr><th>Predictor</th><th>Outcome</th><th>1X2 log-loss</th><th>Brier</th></tr>${orows}</table></div>
-    <div class="rkeyline">Goals check: model expects <b>${pg.toFixed(2)}</b> goals/game; reality is <b>${ag.toFixed(2)}</b>. ${Math.abs(pg-ag)<0.3?'Well-matched.':pg>ag?'It runs slightly hot.':'It runs slightly cold.'}</div>
-    <div class="ohd">Every finished game \u00b7 predicted vs actual</div>
-    <div class="matrixwrap"><table class="report"><tr><th>Match</th><th>Prediction</th><th>Final</th><th>Hit</th></tr>${grow}</table></div>
-    <div class="rkeyline">Green rows = outcome called right. <b>Exact score</b> landed ${exact}/${N} (${pct(exact/N)}) \u2014 and that is fine: nobody beats ~10\u201315% on exact scores, so judge the model on the <b>Hit</b> column, not the scoreline. The real test is new games from here on.</div>`;
+    <div class="seltitle">Model report card <span style="color:var(--dim)">— measured on ${FIN.length} finished games</span></div>
+    <div class="verdict">
+      <div class="vhead">Can you rely on the exact-score predictions? <b class="no">Not for a single game.</b></div>
+      <p>Calling the <b>exact scoreline</b> is intrinsically hard — even elite models land it only about 10–12% of the time. The exact-score column below looks far better than that, but it's <b class="warn">in-sample</b>: the team ratings were fit on these same ${FIN.length} games, so the model has effectively already seen the answers. Out of sample it would drop sharply.</p>
+      <p>What you <b>can</b> lean on is the <b>match outcome</b> (win/draw/win) and the <b>top-5 band</b> — use the predictions to read who's favoured and a plausible range of scores, not to nail 3–1 exactly.</p>
+    </div>
+    <div class="matrixwrap"><table class="report">
+      <tr><th>Predictor</th><th>Exact</th><th>Top-3</th><th>Top-5</th><th>Mean rank</th><th>Log-loss</th><th>Outcome</th></tr>
+      ${rows}
+    </table></div>
+    <div class="rkeyline"><b>Exact / Top-3 / Top-5</b> — how often the real score was the #1 pick / inside the top 3 / top 5. <b>Mean rank</b> — average position of the real score (lower is better). <b>Log-loss</b> — quality of the probability put on the real score (lower is better). <b>Outcome</b> — how often the predicted win/draw/win was right. Green = best in column. The Ensemble row reflects your current weights <b>and</b> the sharpness γ (γ moves only its log-loss, never its hit rates).</div>
+    <div class="caveatbox">
+      <b>Three reasons to stay skeptical of these numbers:</b>
+      <ul>
+        <li><b>Still a small sample</b> — ${FIN.length} games is better than a handful, but a real evaluation spans hundreds.</li>
+        <li><b>In-sample</b> — ratings were fit on these very games, so every figure here flatters the model.</li>
+        <li><b>Missing teams</b> — sides with no finished game (e.g. live Brazil–Haiti) get neutral ratings, not real ones.</li>
+      </ul>
+      A verdict you could actually trust needs out-of-sample testing across hundreds of matches — the full results API + backend route.
+    </div>`;
 }
 function renderTickets(){
   const c=document.getElementById('tickets');
@@ -918,9 +895,7 @@ function renderTickets(){
 }
 
 function renderDossier(){
-  const f=F[active], th=T[f.h], ta=T[f.a];
-  const _o=outcomeProbs(ensembleGrid(f.lh,f.la,WEIGHTS));
-  const p={h:+(_o.h*100).toFixed(1),d:+(_o.d*100).toFixed(1),a:+(_o.a*100).toFixed(1)};
+  const f=F[active], th=T[f.h], ta=T[f.a], p=f.p;
   const edgeRow = (lab,hv,av,d)=>tapeRow(lab,hv,av,d);
   const intD=v=>String(Math.round(v));
   const decD=v=>v.toFixed(2);
@@ -1014,7 +989,7 @@ function renderDossier(){
 
     <div class="mod full sc">
       <div class="modh">Most likely scorelines · top 5</div>
-      ${scoreMatrix(f.h,f.a,f.lh,f.la,{mode:'pre',note:`Model xG · ${f.h} ${f.lh.toFixed(2)} | ${f.a} ${f.la.toFixed(2)}. Most likely score highlighted.`})}
+      ${scorelines(f.h,f.a,p,f.lh,f.la)}
     </div>
   </div>`;
   const d=document.getElementById('dossier');
@@ -1046,48 +1021,35 @@ function applyWeights(w){
   syncWeightLabels(); renderAll(); saveSettings();
 }
 document.querySelectorAll('#wgrid input').forEach(inp=>inp.addEventListener('input',setWeightsFromSliders));
-(function(){const E=id=>document.getElementById(id); if(!E('wEqual'))return;
-E('wEqual').addEventListener('click',()=>applyWeights({poisson:1,dc:1,nb:1,com:1}));
-E('wAuto').addEventListener('click',()=>applyWeights(accuracyWeights()));
-E('gslider').addEventListener('input',e=>{GAMMA=+e.target.value/100;E('gval').textContent=GAMMA.toFixed(2);renderAll();saveSettings();});
-E('gTune').addEventListener('click',()=>{const g=tuneGamma();GAMMA=g;E('gslider').value=Math.round(g*100);E('gval').textContent=g.toFixed(2);renderAll();saveSettings();});
-E('gReset').addEventListener('click',()=>{GAMMA=1;E('gslider').value=100;E('gval').textContent='1.00';renderAll();saveSettings();});})();
+document.getElementById('wEqual').addEventListener('click',()=>applyWeights({poisson:1,dc:1,nb:1,com:1}));
+document.getElementById('wAuto').addEventListener('click',()=>applyWeights(accuracyWeights()));
+document.getElementById('gslider').addEventListener('input',e=>{GAMMA=+e.target.value/100;document.getElementById('gval').textContent=GAMMA.toFixed(2);renderAll();saveSettings();});
+document.getElementById('gTune').addEventListener('click',()=>{const g=tuneGamma();GAMMA=g;document.getElementById('gslider').value=Math.round(g*100);document.getElementById('gval').textContent=g.toFixed(2);renderAll();saveSettings();});
+document.getElementById('gReset').addEventListener('click',()=>{GAMMA=1;document.getElementById('gslider').value=100;document.getElementById('gval').textContent='1.00';renderAll();saveSettings();});
 function syncShapeUI(){
   const set=(sel,disp,raw)=>{const row=document.querySelector('.srow[data-s="'+sel+'"]');if(!row)return;row.querySelector('input').value=raw;row.querySelector('.sval').textContent=disp;};
-  set('nu',COM_NU.toFixed(2),Math.round(COM_NU*100));
+  set('rho',DC_RHO.toFixed(2),Math.round(DC_RHO*100)); set('nbr',String(NB_R),NB_R); set('nu',COM_NU.toFixed(2),Math.round(COM_NU*100));
 }
 function setShapesFromSliders(){
   document.querySelectorAll('#shapegrid .srow').forEach(row=>{const v=+row.querySelector('input').value,sk=row.dataset.s;
-    if(sk==='nu')COM_NU=v/100;});
+    if(sk==='rho')DC_RHO=v/100; else if(sk==='nbr')NB_R=v; else if(sk==='nu')COM_NU=v/100;});
   syncShapeUI(); renderAll(); saveSettings();
 }
 function shapeLL(model){let ll=0;FIN.forEach(m=>{const g=gridFor(m.lh,m.la,model);const c=g.find(s=>s.i===m.sh&&s.j===m.sa);ll+=-Math.log(c.p);});return ll/FIN.length;}
 function calibrateShapes(){
+  let b={ll:1e9};for(let r=-25;r<=25;r++){DC_RHO=r/100;const ll=shapeLL('dc');if(ll<b.ll)b={v:DC_RHO,ll};}DC_RHO=b.v;
+  b={ll:1e9};[2,3,4,6,8,10,14,20,30,50].forEach(r=>{NB_R=r;const ll=shapeLL('nb');if(ll<b.ll)b={v:r,ll};});NB_R=b.v;
   b={ll:1e9};for(let v=60;v<=200;v+=5){COM_NU=v/100;const ll=shapeLL('com');if(ll<b.ll)b={v:COM_NU,ll};}COM_NU=b.v;
   syncShapeUI(); renderAll(); saveSettings();
 }
 document.querySelectorAll('#shapegrid input').forEach(inp=>inp.addEventListener('input',setShapesFromSliders));
-(function(){const E=id=>document.getElementById(id); if(!E('sCal'))return;
-E('sCal').addEventListener('click',calibrateShapes);
-E('sReset').addEventListener('click',()=>{COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
-E('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
-E('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);E('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
-E('advToggle').addEventListener('change',e=>{ADV_ON=e.target.checked;lsSet('wc26.advon',ADV_ON);recompute();});})();
-(function(){
-  const bt=document.getElementById('bivarToggle'); if(bt)bt.addEventListener('change',e=>{BIVAR_ON=e.target.checked;lsSet('wc26.bivaron',BIVAR_ON);renderDossier();});
-  const bs=document.getElementById('bivarSlider'); if(bs)bs.addEventListener('input',e=>{BIVAR_RHO=+e.target.value/100;const v=document.getElementById('bivarv');if(v)v.textContent=BIVAR_RHO.toFixed(2);lsSet('wc26.bivarrho',BIVAR_RHO);renderDossier();});
-  const jt=document.getElementById('jeopToggle'); if(jt)jt.addEventListener('change',e=>{JEOP_ON=e.target.checked;lsSet('wc26.jeopon',JEOP_ON);renderDossier();});
-  const st=document.getElementById('scenToggle'); if(st)st.addEventListener('change',e=>{SCENARIO_ON=e.target.checked;lsSet('wc26.scenon',SCENARIO_ON);const ed=document.getElementById('scenedit');if(ed)ed.classList.toggle('on',SCENARIO_ON);renderDossier();});
-  const rs=document.getElementById('refSlider'); if(rs)rs.addEventListener('input',e=>{REF_STRICT=+e.target.value;const v=document.getElementById('refv');if(v)v.textContent=REF_STRICT;lsSet('wc26.ref',REF_STRICT);renderDossier();});
-  const ps=document.getElementById('pragSlider'); if(ps)ps.addEventListener('input',e=>{MGR_PRAG=+e.target.value;const v=document.getElementById('pragv');if(v)v.textContent=MGR_PRAG;lsSet('wc26.prag',MGR_PRAG);renderDossier();});
-  const lt=document.getElementById('lineupToggle'); if(lt)lt.addEventListener('change',e=>{LINEUP_ON=e.target.checked;lsSet('wc26.lineupon',LINEUP_ON);renderDossier();});
-  const lb=document.getElementById('lbetaSlider'); if(lb)lb.addEventListener('input',e=>{LINEUP_BETA=+e.target.value/100;const v=document.getElementById('lbetav');if(v)v.textContent=LINEUP_BETA.toFixed(2);lsSet('wc26.lbeta',LINEUP_BETA);renderDossier();});
-})();
-(function(){const E=id=>document.getElementById(id); if(!E('scoutTeam'))return;
-E('scoutTeam').addEventListener('change',syncScoutSliders);
-E('atkSlider').addEventListener('input',setScoutFromSliders);
-E('defSlider').addEventListener('input',setScoutFromSliders);})();
-(function(){const ms=document.getElementById('mktSlider');if(ms)ms.addEventListener('input',e=>{MKT_W=+e.target.value/100;const mv=document.getElementById('mktv');if(mv)mv.textContent=Math.round(MKT_W*100)+'%';lsSet('wc26.mktw',MKT_W);recompute();});})();
+document.getElementById('sCal').addEventListener('click',calibrateShapes);
+document.getElementById('sReset').addEventListener('click',()=>{DC_RHO=-0.12;NB_R=14;COM_NU=1.0;syncShapeUI();renderAll();saveSettings();});
+document.getElementById('xgToggle').addEventListener('change',e=>{USE_XG=e.target.checked;lsSet('wc26.usexg',USE_XG);recompute();updateXgNote();});
+document.getElementById('scoutToggle').addEventListener('change',e=>{SCOUT_ON=e.target.checked;lsSet('wc26.scouton',SCOUT_ON);document.getElementById('scoutedit').classList.toggle('on',SCOUT_ON);recompute();});
+document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders);
+document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
+document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
 
 /* ============ LIVE DATA LAYER (ESPN, no key) ============ */
 const ESPN_URL='https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?limit=400&dates=20260611-20260719';
@@ -1154,14 +1116,11 @@ async function loadSummaries(games){
 let TEAMSTATS={};
 function buildTeamStats(games){const acc={};
   games.filter(g=>g.finished).forEach(g=>{const c=STATCACHE[g.id]||{s:{},sot:{}};
-    const mk=(ab)=>{const ss=Object.assign({},c.s[ab]||{});if(ss.sot==null&&c.sot&&c.sot[ab])ss.sot=c.sot[ab];return ss;};
-    const hS=mk(g.home.abbr), aS=mk(g.away.abbr);
-    const side=(me,gf,ga,my,opp)=>{if(!me)return;const a=acc[me]=acc[me]||{games:0,gf:0,ga:0,_f:{},_a:{}};a.games++;a.gf+=gf;a.ga+=ga;
-      for(const k in my){if(my[k]==null)continue;const e=a._f[k]=a._f[k]||{sum:0,n:0};e.sum+=my[k];e.n++;}
-      for(const k in opp){if(opp[k]==null)continue;const e=a._a[k]=a._a[k]||{sum:0,n:0};e.sum+=opp[k];e.n++;}};
-    side(g.home.abbr,g.home.score,g.away.score,hS,aS);side(g.away.abbr,g.away.score,g.home.score,aS,hS);});
-  const out={};for(const ab in acc){const a=acc[ab];const o={games:a.games,gf:a.gf/a.games,ga:a.ga/a.games};
-    for(const k in a._f)o[k]=a._f[k].sum/a._f[k].n; for(const k in a._a)o[k+'A']=a._a[k].sum/a._a[k].n; out[ab]=o;}return out;}
+    const side=(me,gf,ga)=>{if(!me)return;const a=acc[me]=acc[me]||{games:0,gf:0,ga:0,_s:{}};a.games++;a.gf+=gf;a.ga+=ga;
+      const ss=Object.assign({},c.s[me]||{});if(ss.sot==null&&c.sot&&c.sot[me])ss.sot=c.sot[me];
+      for(const k in ss){if(ss[k]==null)continue;const e=a._s[k]=a._s[k]||{sum:0,n:0};e.sum+=ss[k];e.n++;}};
+    side(g.home.abbr,g.home.score,g.away.score);side(g.away.abbr,g.away.score,g.home.score);});
+  const out={};for(const ab in acc){const a=acc[ab];const o={games:a.games,gf:a.gf/a.games,ga:a.ga/a.games};for(const k in a._s)o[k]=a._s[k].sum/a._s[k].n;out[ab]=o;}return out;}
 function profileTeam(ab){const t=TEAMSTATS[ab];if(!t||!t.games)return null;
   const all=Object.values(TEAMSTATS).filter(x=>x.games);const avg=k=>{const v=all.map(x=>x[k]).filter(x=>x!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;};
   const tags=[];const gfA=avg('gf'),gaA=avg('ga');
@@ -1232,22 +1191,6 @@ function setScoutFromSliders(){const ab=curScoutTeam();if(!ab)return;const a=+do
 function populateScoutTeams(){const sel=document.getElementById('scoutTeam');if(!sel)return;const cur=sel.value;
   const abs=[...new Set(LAST_GAMES.flatMap(g=>[g.home.abbr,g.away.abbr]).filter(Boolean))].sort();
   sel.innerHTML=abs.map(ab=>'<option value="'+ab+'">'+ab+'</option>').join('');if(cur&&abs.includes(cur))sel.value=cur;syncScoutSliders();}
-const NAME_ALIAS={drcongo:'COD',congodr:'COD',democraticrepublicofthecongo:'COD',southkorea:'KOR',korearepublic:'KOR',unitedstates:'USA',usa:'USA',ivorycoast:'CIV',cotedivoire:'CIV',czechrepublic:'CZE',czechia:'CZE',iran:'IRN',iriran:'IRN',capeverde:'CPV',caboverde:'CPV',bosniaandherzegovina:'BIH',bosnia:'BIH',curacao:'CUW'};
-function nameToAbbr(name){if(!name)return null;const n=String(name).toLowerCase().replace(/[^a-z]/g,'');if(!n)return null;if(NAME_ALIAS[n]&&T[NAME_ALIAS[n]])return NAME_ALIAS[n];let best=null;for(const ab in T){const tn=(T[ab].n||'').toLowerCase().replace(/[^a-z]/g,'');if(!tn)continue;if(tn===n)return ab;if(tn.includes(n)||n.includes(tn))best=ab;}return best;}
-function deVig(oH,oD,oA){const iH=1/oH,iD=1/oD,iA=1/oA,s=iH+iD+iA;return {h:iH/s,d:iD/s,a:iA/s};}
-function marketKey(h,a){return h+'_'+a;}
-function blendOutcome(model,mkt){if(!mkt)return model;const w=MKT_W;return {h:(1-w)*model.h+w*mkt.h,d:(1-w)*model.d+w*mkt.d,a:(1-w)*model.a+w*mkt.a};}
-async function fetchOdds(){
-  if(!ODDS_API_KEY)return false;
-  const url='https://api.the-odds-api.com/v4/sports/soccer_fifa_world_cup/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey='+ODDS_API_KEY;
-  try{const r=await fetch(url);if(!r.ok)return false;const arr=await r.json();if(!Array.isArray(arr))return false;let any=false;
-    arr.forEach(ev=>{const ha=nameToAbbr(ev.home_team),aa=nameToAbbr(ev.away_team);if(!ha||!aa)return;
-      const bk=(ev.bookmakers||[])[0];if(!bk)return;const mk=(bk.markets||[]).find(m=>m.key==='h2h');if(!mk||!mk.outcomes)return;
-      let oH,oD,oA;mk.outcomes.forEach(o=>{if(o.name===ev.home_team)oH=o.price;else if(o.name===ev.away_team)oA=o.price;else oD=o.price;});
-      if(oH&&oD&&oA){MARKET[marketKey(ha,aa)]=deVig(oH,oD,oA);any=true;}});
-    return any;
-  }catch(e){return false;}
-}
 const HOSTS={USA:1,MEX:1,CAN:1};
 function xgLambda(hf,af,la,ha){ha=ha||1;const cap=4,cl=x=>Math.min(cap,Math.max(0.05,x));return {lh:cl(hf.xgFor*af.xgAgainst/la*ha),la:cl(af.xgFor*hf.xgAgainst/la/ha)};}
 function lambdasFor(g,form){const fb={xgFor:form.leagueAvg,xgAgainst:form.leagueAvg};const ha=(!g.neutral&&HOSTS[g.home.abbr])?1.06:1.0;return xgLambda(form.teams[g.home.abbr]||fb,form.teams[g.away.abbr]||fb,form.leagueAvg,ha);}
@@ -1296,7 +1239,7 @@ function rebuildLiveData(games,form){
   if(nf.length){FIN.length=0;nf.forEach(x=>FIN.push(x));}
   LIVE.length=0;
   games.filter(g=>g.state==='in'&&g.home.abbr&&g.away.abbr).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la);LIVE.push({h:g.home.abbr,a:g.away.abbr,g:g.group||'?',sh:g.home.score,sa:g.away.score,lh:+lh.toFixed(3),la:+la.toFixed(3),min:minuteFrom(g.statusDetail)});});
-  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const _al=advLambda(g.home.abbr,g.away.abbr,lh,la);const o=outcomeProbs(ensembleGrid(_al.lh,_al.la,WEIGHTS));const mkt=MARKET[marketKey(g.home.abbr,g.away.abbr)]||null;const ob=blendOutcome(o,mkt);nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),mkt:mkt,p:{h:+(ob.h*100).toFixed(1),d:+(ob.d*100).toFixed(1),a:+(ob.a*100).toFixed(1)}});});
+  const nu=[];games.filter(g=>g.state==='pre'&&g.group&&g.home.abbr&&g.away.abbr&&T[g.home.abbr]&&T[g.away.abbr]).slice(0,12).forEach(g=>{const{lh,la}=adjustedLambdas(g,form,games);savePred(g.id,lh,la,true);const o=outcomeProbs(ensembleGrid(lh,la,WEIGHTS));nu.push({h:g.home.abbr,a:g.away.abbr,when:fmtWhen(g.date),id:g.id,lh:+lh.toFixed(3),la:+la.toFixed(3),p:{h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)}});});
   if(nu.length){F.length=0;nu.forEach(x=>F.push(x));}
   TEAMSTATS=buildTeamStats(games);
 }
@@ -1320,7 +1263,7 @@ async function bootstrapLive(){
   active=0;
   renderLive();renderTickets();renderDossier();renderFinished();renderReport();syncWeightLabels();
   populateScoutTeams();renderScoutChips();updateXgNote();
-  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);const mo=await fetchOdds();if(USE_XG||mo)rebuildLiveData(games,buildForm(games));if(ch||USE_XG||mo){renderLive();renderDossier();renderFinished();renderReport();}updateXgNote();}catch(e){}}
+  if(games.length){try{const ch=await loadSummaries(games);TEAMSTATS=buildTeamStats(games);if(USE_XG)rebuildLiveData(games,buildForm(games));if(ch||USE_XG){renderLive();renderDossier();renderFinished();renderReport();}updateXgNote();}catch(e){}}
 }
 
 loadSettings();
