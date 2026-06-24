@@ -444,7 +444,8 @@
       <div class="srow"><label>Defence core (1–10) <b class="sval" id="sdAv">6.0</b></label><input type="range" id="sdSlider" min="10" max="100" step="5" value="60"></div>
       <div class="srow"><label>Influence β <b class="sval" id="sbv">0.35</b></label><input type="range" id="sbSlider" min="0" max="80" value="35"></div>
       <div class="chips" id="squadChips"></div>
-      <div class="mbnote" id="squadsrc">Set ratings by hand, or paste a free <b>API-Football</b> key in the code to auto-fill from each team's last 3 matches. Fetched ratings are <b>cached on this device</b> and re-queried at most twice a day, so you stay inside the free 100-calls/day limit.</div>
+      <div class="srow" style="gap:10px"><button id="fbTest" type="button" class="cbtn">Test API connection</button><span class="sval" id="squadstatus" style="font-size:11px;color:var(--dim)">\u2014</span></div>
+      <div class="mbnote" id="squadsrc">Set ratings by hand, or auto-fill from <b>API-Football</b> (last 3 matches per team). Tap <b>Test API connection</b> to check it reaches the data. Ratings are <b>cached on this device</b> and re-queried at most twice a day.</div>
     </div>
     <div class="mbnote"><b>Shot-based xG</b> rebuilds ratings from shots on target (chance quality) instead of raw goals — it cools lucky scorelines and credits stingy defenses; the note shows whether it lowers log-loss on finished games. <b>Scout adjustments</b> nudge a team's attack/defense by hand for what the model is blind to (a deep block, a key injury). <b class="warn">Each only affects the model while its switch is on</b> — flip off and the numbers revert.</div>
   </div>
@@ -860,6 +861,34 @@ function modelStats(key){
   const n=FIN.length;
   return {exact:t1/n,top3:t3/n,top5:t5/n,meanRank:rk/n,logloss:ll/n,outcome:oc/n};
 }
+let CALIB_SCALE=1;
+function clmp(x,lo,hi){return Math.min(hi,Math.max(lo,x));}
+function dcTauLocal(i,j,lh,la,rho){ if(i===0&&j===0)return 1-lh*la*rho; if(i===0&&j===1)return 1+lh*rho; if(i===1&&j===0)return 1+la*rho; if(i===1&&j===1)return 1-rho; return 1; }
+const ERR_WINDOW=10;
+function errorModel(){
+  const W=FIN.slice(-ERR_WINDOW), n=W.length||1;
+  let sh=0,sa=0,ph=0,pa=0,draws=0,pdraws=0; const tb={};
+  W.forEach(m=>{ sh+=m.sh; sa+=m.sa; ph+=m.lh; pa+=m.la; if(m.sh===m.sa)draws++;
+    pdraws+=outcomeProbs(ensembleGrid(m.lh,m.la,WEIGHTS)).d;
+    (tb[m.h]=tb[m.h]||{s:0,n:0}); tb[m.h].s+=(m.sh-m.lh); tb[m.h].n++;
+    (tb[m.a]=tb[m.a]||{s:0,n:0}); tb[m.a].s+=(m.sa-m.la); tb[m.a].n++; });
+  const bH=clmp((sh-ph)/n,-1,1), bA=clmp((sa-pa)/n,-1,1);
+  const gscale=clmp((sh+sa)/Math.max(0.1,ph+pa),0.8,1.25);
+  const team={}; for(const ab in tb){const e=tb[ab]; team[ab]=clmp(e.s/e.n*(e.n/(e.n+3)),-0.7,0.7);}  // James-Stein style shrink
+  const rho=clmp(((draws/n)-(pdraws/n))*0.8,-0.18,0.18);
+  return {bH,bA,gscale,team,rho,n,drawRate:draws/n,pdrawRate:pdraws/n};
+}
+function correctedLambdas(lh,la,h,a,EM){
+  let H=(lh+EM.bH+(EM.team[h]||0))*EM.gscale, A=(la+EM.bA+(EM.team[a]||0))*EM.gscale;
+  return {lh:clmp(H,0.05,5), la:clmp(A,0.05,5)};
+}
+function correctedGrid(lh,la,h,a,EM){
+  const c=correctedLambdas(lh,la,h,a,EM); let g=ensembleGrid(c.lh,c.la,WEIGHTS);
+  if(Math.abs(EM.rho)>0.001){let s=0; g=g.map(o=>{const p=o.p*dcTauLocal(o.i,o.j,c.lh,c.la,EM.rho); s+=p; return {i:o.i,j:o.j,p};}); g.forEach(o=>o.p/=s); g.sort((x,y)=>y.p-x.p);}
+  return {grid:g,lh:c.lh,la:c.la};
+}
+function recentCalibration(){let pg=0,ag=0;FIN.forEach(m=>{pg+=m.lh+m.la;ag+=m.sh+m.sa;});if(pg<=0||!FIN.length)return 1;return Math.min(1.25,Math.max(0.8,ag/pg));}
+function top2cal(lh,la){const s=CALIB_SCALE;const g=ensembleGrid(lh*s,la*s,WEIGHTS);return [g[0],g[1]];}
 function renderReport(){
   const c=document.getElementById('report');
   const models=[['poisson','Poisson'],['dc','Dixon-Coles'],['nb','Neg. Binomial'],['com','COM-Poisson'],['ens','Ensemble']];
@@ -876,7 +905,55 @@ function renderReport(){
     <td class="${s.meanRank===bRank?'best':''}">${s.meanRank.toFixed(1)}</td>
     <td class="${s.logloss===bLL?'best':''}">${s.logloss.toFixed(2)}</td>
     <td class="${s.outcome===bOut?'best':''}">${pct(s.outcome)}</td></tr>`).join('');
+  CALIB_SCALE=recentCalibration();
+  let _pg=0,_ag=0; FIN.forEach(m=>{_pg+=m.lh+m.la;_ag+=m.sh+m.sa;}); const _N=FIN.length||1; _pg/=_N; _ag/=_N;
+  const fmtS=x=>x.i+'-'+x.j;
+  let t1h=0,t2h=0,oh=0;
+  const frows=FIN.map(m=>{const a=top2cal(m.lh,m.la),p1=a[0],p2=a[1];const e1=(p1.i===m.sh&&p1.j===m.sa),e2=(p2.i===m.sh&&p2.j===m.sa);if(e1)t1h++;if(e1||e2)t2h++;
+    const g=ensembleGrid(m.lh*CALIB_SCALE,m.la*CALIB_SCALE,WEIGHTS),op=outcomeProbs(g),pred=op.h>=op.d&&op.h>=op.a?'H':op.a>=op.h&&op.a>=op.d?'A':'D';const hitO=pred===actualOutcome(m.sh,m.sa);if(hitO)oh++;
+    const mark=(e1||e2)?'✓':(hitO?'~':'✗');
+    return `<tr style="${(e1||e2)?'background:rgba(47,224,174,.12)':''}"><td class="t">${m.h}–${m.a}</td><td>${m.sh}-${m.sa}</td><td>${fmtS(p1)}</td><td>${fmtS(p2)}</td><td>${mark}</td></tr>`;}).join('');
+  const urows=(F&&F.length)?F.map(f=>{const a=top2cal(f.lh,f.la);return `<tr><td class="t">${f.h}–${f.a}</td><td>${fmtS(a[0])}</td><td>${fmtS(a[1])}</td><td style="color:var(--dim)">${f.when||''}</td></tr>`;}).join(''):'<tr><td colspan="4" style="color:var(--dim)">no upcoming games loaded yet</td></tr>';
+  const scaleNote=Math.abs(CALIB_SCALE-1)<0.02?' (no real adjustment needed)':(CALIB_SCALE<1?' (model ran hot — nudged down)':' (model ran cold — nudged up)');
+  const calibHTML=`
+    <div class="seltitle">Calibrated top-2 picks <span style="color:var(--dim)">— two shots per game</span></div>
+    <div class="rkeyline">Recent-form calibration: the model expected <b>${_pg.toFixed(2)}</b> goals/game, reality was <b>${_ag.toFixed(2)}</b> → goal scale <b>×${CALIB_SCALE.toFixed(2)}</b>${scaleNote}. One bounded number from the last ${_N} games — it corrects bias without fitting noise.</div>
+    <div class="rkeyline">Over those ${_N} games: top pick hit the exact score <b>${Math.round(t1h/_N*100)}%</b>, <b>top-2 hit ${Math.round(t2h/_N*100)}%</b>, and the favourite outcome was right <b>${Math.round(oh/_N*100)}%</b>. Two shots roughly doubles your exact hits — that's the honest edge.</div>
+    <div class="rkeyline" style="color:var(--ink);font-weight:600;margin-top:14px">Every finished game · actual vs your two picks</div>
+    <div class="matrixwrap"><table class="report"><tr><th>Match</th><th>Final</th><th>Pick 1</th><th>Pick 2</th><th>Hit</th></tr>${frows}</table></div>
+    <div class="rkeyline" style="color:var(--ink);font-weight:600;margin-top:14px">Next games · your two picks</div>
+    <div class="matrixwrap"><table class="report"><tr><th>Match</th><th>Pick 1</th><th>Pick 2</th><th>When</th></tr>${urows}</table></div>
+    <div class="rkeyline" style="margin-bottom:22px">✓ = one of your two picks nailed the exact score · ~ = missed the score but called the right outcome · ✗ = both off. These picks already include the recent-form scale. This is calibration + two shots — it lifts your hit-rate honestly and still works <b>forward</b>, unlike a formula bent to fit the past.</div>`;
+  const EM=errorModel();
+  const tnudges=Object.entries(EM.team).filter(([k,v])=>Math.abs(v)>0.15).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).slice(0,6).map(([k,v])=>k+' '+(v>0?'+':'')+v.toFixed(2)).join(' · ')||'none strong yet';
+  let rawT1=0,corT1=0,corT2=0,rawO=0,corO=0;
+  const erows=FIN.map(m=>{
+    const rg=ensembleGrid(m.lh,m.la,WEIGHTS), raw=rg[0];
+    const cg=correctedGrid(m.lh,m.la,m.h,m.a,EM).grid, c1=cg[0],c2=cg[1];
+    const act=actualOutcome(m.sh,m.sa);
+    const rop=outcomeProbs(rg), rpr=rop.h>=rop.d&&rop.h>=rop.a?'H':rop.a>=rop.h&&rop.a>=rop.d?'A':'D'; if(rpr===act)rawO++;
+    const cop=outcomeProbs(cg), cpr=cop.h>=cop.d&&cop.h>=cop.a?'H':cop.a>=cop.h&&cop.a>=cop.d?'A':'D'; if(cpr===act)corO++;
+    if(raw.i===m.sh&&raw.j===m.sa)rawT1++;
+    const ce1=(c1.i===m.sh&&c1.j===m.sa),ce2=(c2.i===m.sh&&c2.j===m.sa); if(ce1)corT1++; if(ce1||ce2)corT2++;
+    const changed=(raw.i!==c1.i||raw.j!==c1.j);
+    return `<tr style="${(ce1||ce2)?'background:rgba(47,224,174,.12)':''}"><td class="t">${m.h}–${m.a}</td><td>${m.sh}-${m.sa}</td><td style="color:var(--dim)">${fmtS(raw)}</td><td><b>${fmtS(c1)}</b>${changed?' ✵':''}</td><td>${(ce1||ce2)?'✓':'✗'}</td></tr>`;
+  }).join('');
+  const ecrows=(F&&F.length)?F.map(f=>{const cg=correctedGrid(f.lh,f.la,f.h,f.a,EM).grid;return `<tr><td class="t">${f.h}–${f.a}</td><td><b>${fmtS(cg[0])}</b></td><td>${fmtS(cg[1])}</td><td style="color:var(--dim)">${f.when||''}</td></tr>`;}).join(''):'<tr><td colspan="4" style="color:var(--dim)">no upcoming games loaded yet</td></tr>';
+  const errHTML=`
+    <div class="seltitle" style="margin-top:26px">Error-correction lab <span style="color:var(--dim)">— retrospective, last ${EM.n} games</span></div>
+    <div class="caveatbox"><b>You asked to see it, so here it is.</b> This deliberately bends the prediction to fit the recent past. In-sample it looks strong; forward it is noisy. Read it as <b>"where the model has been wrong lately"</b> — a magnifying glass on recent bias, not a crystal ball.</div>
+    <div class="rkeyline">Detected bias (last ${EM.n}): home side <b>${EM.bH>=0?'+':''}${EM.bH.toFixed(2)}</b> goals · away side <b>${EM.bA>=0?'+':''}${EM.bA.toFixed(2)}</b> · goal scale <b>×${EM.gscale.toFixed(2)}</b> · draws <b>${Math.round(EM.drawRate*100)}%</b> actual vs <b>${Math.round(EM.pdrawRate*100)}%</b> predicted → draw nudge <b>${EM.rho>=0?'+':''}${EM.rho.toFixed(2)}</b>.</div>
+    <div class="rkeyline">Per-team recent nudges (sample-shrunk): ${tnudges}.</div>
+    <div class="rkeyline">Exact-score: raw top pick <b>${Math.round(rawT1/(FIN.length||1)*100)}%</b> → corrected <b>${Math.round(corT1/(FIN.length||1)*100)}%</b> · corrected top-2 <b>${Math.round(corT2/(FIN.length||1)*100)}%</b>. Notice the correction often <b>lowers</b> exact-score — shifting λ just moves the dart to a different wrong square.</div>
+    <div class="rkeyline">Outcome (win/draw/win): raw <b>${Math.round(rawO/(FIN.length||1)*100)}%</b> → corrected <b style="color:var(--mint)">${Math.round(corO/(FIN.length||1)*100)}%</b>. <b>This is the real payoff</b> — fixing the draw &amp; goal-level bias helps you call the <b>winner</b>, even as it hurts the exact score.</div>
+    <div class="rkeyline" style="color:var(--ink);font-weight:600;margin-top:14px">Finished · model pick → corrected pick vs actual <span style="color:var(--dim)">(✵ = correction changed the call)</span></div>
+    <div class="matrixwrap"><table class="report"><tr><th>Match</th><th>Final</th><th>Model</th><th>Corrected</th><th>Hit</th></tr>${erows}</table></div>
+    <div class="rkeyline" style="color:var(--ink);font-weight:600;margin-top:14px">Next games · corrected suggestion</div>
+    <div class="matrixwrap"><table class="report"><tr><th>Match</th><th>Pick 1</th><th>Pick 2</th><th>When</th></tr>${ecrows}</table></div>
+    <div class="rkeyline" style="margin-bottom:22px">The corrected pick = ensemble λ shifted by each side's recent error, the team nudges, the goal scale, and the draw correction — then re-peaked. It will ace these past games (it was built from them). Whether it helps the <b>next</b> one is the only question that matters — watch it on the games as they land.</div>`;
   c.innerHTML=`
+    ${calibHTML}
+    ${errHTML}
     <div class="seltitle">Model report card <span style="color:var(--dim)">— measured on ${FIN.length} finished games</span></div>
     <div class="verdict">
       <div class="vhead">Can you rely on the exact-score predictions? <b class="no">Not for a single game.</b></div>
@@ -1072,6 +1149,7 @@ document.getElementById('atkSlider').addEventListener('input',setScoutFromSlider
 document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
 document.getElementById('squadToggle').addEventListener('change',e=>{SQUAD_ON=e.target.checked;lsSet('wc26.squadon',SQUAD_ON);document.getElementById('squadedit').classList.toggle('on',SQUAD_ON);recompute();});
 document.getElementById('squadTeam').addEventListener('change',syncSquadSliders);
+document.getElementById('fbTest').addEventListener('click',testFbConnection);
 document.getElementById('saSlider').addEventListener('input',setSquadFromSliders);
 document.getElementById('sdSlider').addEventListener('input',setSquadFromSliders);
 document.getElementById('sbSlider').addEventListener('input',e=>{SQUAD_BETA=+e.target.value/100;document.getElementById('sbv').textContent=SQUAD_BETA.toFixed(2);lsSet('wc26.squadbeta',SQUAD_BETA);if(SQUAD_ON)recompute();});
@@ -1131,10 +1209,26 @@ async function fbGet(path){
   for(const [u,opts] of tries){ try{ const r=await fetch(u,opts); if(!r.ok)continue; const j=await r.json(); if(j&&j.response)return j.response; }catch(e){} }
   return null;
 }
-async function ensureFbTeams(){if(Object.keys(FBTEAMS).length)return;const resp=await fbGet('teams?league='+FB_LEAGUE+'&season='+FB_SEASON);if(!resp)return;resp.forEach(t=>{const code=(t.team.code||'').toUpperCase();if(code)FBTEAMS[code]={id:t.team.id};});lsSet('wc26.fbteams',FBTEAMS);}
+async function ensureFbTeams(){if(Object.keys(FBTEAMS).length)return 0;const resp=await fbGet('teams?league='+FB_LEAGUE+'&season='+FB_SEASON);if(!resp)return -1;
+  const norm=x=>(x||'').toLowerCase().replace(/[^a-z]/g,'');let mapped=0;
+  resp.forEach(t=>{const nm=norm(t.team.name),code=(t.team.code||'').toUpperCase();
+    let ab=null; for(const k in T){if(norm(T[k].n)===nm){ab=k;break;}}
+    if(!ab && code && T[code]) ab=code;
+    if(ab){FBTEAMS[ab]={id:t.team.id};mapped++;}});
+  lsSet('wc26.fbteams',FBTEAMS); return mapped;}
+function setSquadStatus(msg){const el=document.getElementById('squadstatus');if(el)el.textContent=msg;}
+async function testFbConnection(){
+  setSquadStatus('testing…');
+  if(!FOOTBALL_API_KEY && !FB_PROXY){setSquadStatus('no key or Worker URL set in the code'); return;}
+  const r=await fbGet('status');
+  if(r&&r.requests){setSquadStatus('connected \u2713 \u00b7 '+(r.requests.current||0)+'/'+(r.requests.limit_day||100)+' calls today'); const m=await ensureFbTeams(); setSquadStatus('connected \u2713 \u00b7 '+(r.requests.current||0)+'/'+(r.requests.limit_day||100)+' calls \u00b7 '+(m>0?m+' WC teams matched':'team list empty')); }
+  else if(r){setSquadStatus('reached API but odd response (check key/subscription)');}
+  else {setSquadStatus('no response \u2014 blocked by CORS or bad key. Deploy the Worker (FB_PROXY).');}
+}
 async function fetchTeamRatings(abbrs){
   if(!FOOTBALL_API_KEY && !FB_PROXY)return false;
-  try{ await ensureFbTeams(); let changed=false;
+  setSquadStatus('fetching ratings\u2026');
+  try{ const mapped=await ensureFbTeams(); if(mapped===-1){setSquadStatus('no response \u2014 blocked by CORS or bad key. Deploy the Worker.');return false;} let changed=false,loaded=0;
     for(const ab of abbrs){
       if(ratingsFresh(ab))continue;                              // cached & fresh -> skip (saves quota)
       const fb=FBTEAMS[ab]; if(!fb)continue;
@@ -1148,9 +1242,10 @@ async function fetchTeamRatings(abbrs){
           const rt=parseFloat(st.games&&st.games.rating); if(!rt)return;
           const b=posBucket(st.games&&st.games.position); if(b==='att'){aS+=rt;aN++;} else if(b==='def'){dS+=rt;dN++;} });
       });});
-      if(aN||dN){ RATINGS[ab]={att:aN?+(aS/aN).toFixed(2):null, def:dN?+(dS/dN).toFixed(2):null, n:fx.length, ts:Date.now(), src:'api'}; changed=true; }
+      if(aN||dN){ RATINGS[ab]={att:aN?+(aS/aN).toFixed(2):null, def:dN?+(dS/dN).toFixed(2):null, n:fx.length, ts:Date.now(), src:'api'}; changed=true; loaded++; }
     }
     if(changed)lsSet('wc26.ratings',RATINGS);
+    setSquadStatus(loaded?('loaded ratings for '+loaded+' team'+(loaded>1?'s':'')):'connected, but no player ratings available yet for these teams');
     return changed;
   }catch(e){return false;}
 }
