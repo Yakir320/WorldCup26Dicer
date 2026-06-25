@@ -437,6 +437,7 @@
       <div class="srow"><label>Defense (higher = tougher) <b class="sval" id="defv">0</b></label><input type="range" id="defSlider" min="-3" max="3" value="0"></div>
       <div class="chips" id="scoutChips"></div>
     </div>
+    <div class="inrow"><label class="switch"><input type="checkbox" id="corrToggle"><span class="track"></span><span class="swlbl">Error-correction · corrected picks <b class="swsub" style="color:var(--amber)">recolours upcoming games with the all-games bias fix</b></span></label></div>
     <div class="inrow"><label class="switch"><input type="checkbox" id="squadToggle"><span class="track"></span><span class="swlbl">Squad quality · player ratings <b class="swsub">attack core vs opponent defence core → scales λ</b></span></label></div>
     <div class="scoutedit" id="squadedit">
       <select id="squadTeam"></select>
@@ -605,7 +606,7 @@ const MODELS=['poisson','dc','nb','com'];
 let WEIGHTS={poisson:1,dc:1,nb:1,com:1};   // raw ensemble weights (normalized on use)
 function lsGet(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
-function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.squadon',SQUAD_ON);lsSet('wc26.squadbeta',SQUAD_BETA);}
+function saveSettings(){lsSet('wc26.weights',WEIGHTS);lsSet('wc26.gamma',GAMMA);lsSet('wc26.shape',{rho:DC_RHO,nbr:NB_R,nu:COM_NU});lsSet('wc26.usexg',USE_XG);lsSet('wc26.scouton',SCOUT_ON);lsSet('wc26.scout',SCOUT);lsSet('wc26.squadon',SQUAD_ON);lsSet('wc26.squadbeta',SQUAD_BETA);lsSet('wc26.corron',CORR_ON);}
 function loadSettings(){
   const w=lsGet('wc26.weights',null); if(w){MODELS.forEach(m=>{if(typeof w[m]==='number')WEIGHTS[m]=w[m];});}
   const g=lsGet('wc26.gamma',null); if(typeof g==='number')GAMMA=g;
@@ -615,6 +616,8 @@ function loadSettings(){
   const sct=document.getElementById('scoutToggle'); if(sct)sct.checked=SCOUT_ON;
   const sed=document.getElementById('scoutedit'); if(sed)sed.classList.toggle('on',SCOUT_ON);
   SQUAD_ON=lsGet('wc26.squadon',false); SQUAD_BETA=lsGet('wc26.squadbeta',0.35);
+  CORR_ON=lsGet('wc26.corron',false);
+  const _ct=document.getElementById('corrToggle'); if(_ct)_ct.checked=CORR_ON;
   const sqt=document.getElementById('squadToggle'); if(sqt)sqt.checked=SQUAD_ON;
   const sqe=document.getElementById('squadedit'); if(sqe)sqe.classList.toggle('on',SQUAD_ON);
   const sbs=document.getElementById('sbSlider'); if(sbs)sbs.value=Math.round(SQUAD_BETA*100);
@@ -866,7 +869,7 @@ function clmp(x,lo,hi){return Math.min(hi,Math.max(lo,x));}
 function dcTauLocal(i,j,lh,la,rho){ if(i===0&&j===0)return 1-lh*la*rho; if(i===0&&j===1)return 1+lh*rho; if(i===1&&j===0)return 1+la*rho; if(i===1&&j===1)return 1-rho; return 1; }
 const ERR_WINDOW=10;
 function errorModel(){
-  const W=FIN.slice(-ERR_WINDOW), n=W.length||1;
+  const W=FIN, n=W.length||1;   // ALL finished games
   let sh=0,sa=0,ph=0,pa=0,draws=0,pdraws=0; const tb={};
   W.forEach(m=>{ sh+=m.sh; sa+=m.sa; ph+=m.lh; pa+=m.la; if(m.sh===m.sa)draws++;
     pdraws+=outcomeProbs(ensembleGrid(m.lh,m.la,WEIGHTS)).d;
@@ -887,6 +890,8 @@ function correctedGrid(lh,la,h,a,EM){
   if(Math.abs(EM.rho)>0.001){let s=0; g=g.map(o=>{const p=o.p*dcTauLocal(o.i,o.j,c.lh,c.la,EM.rho); s+=p; return {i:o.i,j:o.j,p};}); g.forEach(o=>o.p/=s); g.sort((x,y)=>y.p-x.p);}
   return {grid:g,lh:c.lh,la:c.la};
 }
+let CORR_ON=false, ERRMODEL=null;
+function getErrModel(){ if(!ERRMODEL)ERRMODEL=errorModel(); return ERRMODEL; }
 function recentCalibration(){let pg=0,ag=0;FIN.forEach(m=>{pg+=m.lh+m.la;ag+=m.sh+m.sa;});if(pg<=0||!FIN.length)return 1;return Math.min(1.25,Math.max(0.8,ag/pg));}
 function top2cal(lh,la){const s=CALIB_SCALE;const g=ensembleGrid(lh*s,la*s,WEIGHTS);return [g[0],g[1]];}
 function renderReport(){
@@ -940,9 +945,9 @@ function renderReport(){
   }).join('');
   const ecrows=(F&&F.length)?F.map(f=>{const cg=correctedGrid(f.lh,f.la,f.h,f.a,EM).grid;return `<tr><td class="t">${f.h}–${f.a}</td><td><b>${fmtS(cg[0])}</b></td><td>${fmtS(cg[1])}</td><td style="color:var(--dim)">${f.when||''}</td></tr>`;}).join(''):'<tr><td colspan="4" style="color:var(--dim)">no upcoming games loaded yet</td></tr>';
   const errHTML=`
-    <div class="seltitle" style="margin-top:26px">Error-correction lab <span style="color:var(--dim)">— retrospective, last ${EM.n} games</span></div>
+    <div class="seltitle" style="margin-top:26px">Error-correction lab <span style="color:var(--dim)">— retrospective, all ${EM.n} games</span></div>
     <div class="caveatbox"><b>You asked to see it, so here it is.</b> This deliberately bends the prediction to fit the recent past. In-sample it looks strong; forward it is noisy. Read it as <b>"where the model has been wrong lately"</b> — a magnifying glass on recent bias, not a crystal ball.</div>
-    <div class="rkeyline">Detected bias (last ${EM.n}): home side <b>${EM.bH>=0?'+':''}${EM.bH.toFixed(2)}</b> goals · away side <b>${EM.bA>=0?'+':''}${EM.bA.toFixed(2)}</b> · goal scale <b>×${EM.gscale.toFixed(2)}</b> · draws <b>${Math.round(EM.drawRate*100)}%</b> actual vs <b>${Math.round(EM.pdrawRate*100)}%</b> predicted → draw nudge <b>${EM.rho>=0?'+':''}${EM.rho.toFixed(2)}</b>.</div>
+    <div class="rkeyline">Detected bias (all ${EM.n}): home side <b>${EM.bH>=0?'+':''}${EM.bH.toFixed(2)}</b> goals · away side <b>${EM.bA>=0?'+':''}${EM.bA.toFixed(2)}</b> · goal scale <b>×${EM.gscale.toFixed(2)}</b> · draws <b>${Math.round(EM.drawRate*100)}%</b> actual vs <b>${Math.round(EM.pdrawRate*100)}%</b> predicted → draw nudge <b>${EM.rho>=0?'+':''}${EM.rho.toFixed(2)}</b>.</div>
     <div class="rkeyline">Per-team recent nudges (sample-shrunk): ${tnudges}.</div>
     <div class="rkeyline">Exact-score: raw top pick <b>${Math.round(rawT1/(FIN.length||1)*100)}%</b> → corrected <b>${Math.round(corT1/(FIN.length||1)*100)}%</b> · corrected top-2 <b>${Math.round(corT2/(FIN.length||1)*100)}%</b>. Notice the correction often <b>lowers</b> exact-score — shifting λ just moves the dart to a different wrong square.</div>
     <div class="rkeyline">Outcome (win/draw/win): raw <b>${Math.round(rawO/(FIN.length||1)*100)}%</b> → corrected <b style="color:var(--mint)">${Math.round(corO/(FIN.length||1)*100)}%</b>. <b>This is the real payoff</b> — fixing the draw &amp; goal-level bias helps you call the <b>winner</b>, even as it hurts the exact score.</div>
@@ -979,17 +984,23 @@ function renderTickets(){
   const c=document.getElementById('tickets');
   c.innerHTML='';
   F.forEach((f,i)=>{
+    let corr='';
+    if(CORR_ON){const cg=correctedGrid(f.lh,f.la,f.h,f.a,getErrModel()).grid;corr=`<div class="tt" style="color:var(--amber)">\u27f3 ${cg[0].i}-${cg[0].j}</div>`;}
     const t=el(`<button class="ticket ${i===active?'on':''}" role="tab" aria-selected="${i===active}">
       <div class="tg">Group ${T[f.h].g}</div>
       <div class="tm">${f.h}<span class="v">v</span>${f.a}</div>
-      <div class="tt">${f.when}</div></button>`);
+      <div class="tt">${f.when}</div>${corr}</button>`);
     t.addEventListener('click',()=>{active=i;renderTickets();renderDossier();});
     c.appendChild(t);
   });
 }
 
 function renderDossier(){
-  const f=F[active], th=T[f.h], ta=T[f.a], p=f.p;
+  const f=F[active], th=T[f.h], ta=T[f.a];
+  let p=f.p, corrLine='';
+  if(CORR_ON){ const r=correctedGrid(f.lh,f.la,f.h,f.a,getErrModel()); const o=outcomeProbs(r.grid);
+    p={h:+(o.h*100).toFixed(1),d:+(o.d*100).toFixed(1),a:+(o.a*100).toFixed(1)};
+    corrLine=`<div style="margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--amber);border-top:1px solid var(--line);padding-top:8px">\u27f3 Corrected pick: <b>${r.grid[0].i}-${r.grid[0].j}</b> or <b>${r.grid[1].i}-${r.grid[1].j}</b> &nbsp;·&nbsp; corrected odds ${Math.round(p.h)}% / ${Math.round(p.d)}% / ${Math.round(p.a)}%</div>`; }
   const edgeRow = (lab,hv,av,d)=>tapeRow(lab,hv,av,d);
   const intD=v=>String(Math.round(v));
   const decD=v=>v.toFixed(2);
@@ -1029,6 +1040,7 @@ function renderDossier(){
         <span>${f.a} <span class="fav">${p.a}%</span></span>
       </div>
       ${sqLine}
+      ${corrLine}
     </div>
   </div>
 
@@ -1148,6 +1160,7 @@ document.getElementById('scoutTeam').addEventListener('change',syncScoutSliders)
 document.getElementById('atkSlider').addEventListener('input',setScoutFromSliders);
 document.getElementById('defSlider').addEventListener('input',setScoutFromSliders);
 document.getElementById('squadToggle').addEventListener('change',e=>{SQUAD_ON=e.target.checked;lsSet('wc26.squadon',SQUAD_ON);document.getElementById('squadedit').classList.toggle('on',SQUAD_ON);recompute();});
+document.getElementById('corrToggle').addEventListener('change',e=>{CORR_ON=e.target.checked;lsSet('wc26.corron',CORR_ON);renderTickets();renderDossier();});
 document.getElementById('squadTeam').addEventListener('change',syncSquadSliders);
 document.getElementById('fbTest').addEventListener('click',testFbConnection);
 document.getElementById('saSlider').addEventListener('input',setSquadFromSliders);
@@ -1395,7 +1408,7 @@ function adjustedLambdas(g,form,allGames){
 function minuteFrom(d){if(/HT/i.test(d))return 45;const m=String(d).match(/(\d+)/);return m?Math.min(90,+m[1]):45;}
 function fmtWhen(iso){try{const d=new Date(iso);const day=d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});const tm=d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});return day+' · '+tm;}catch(e){return iso;}}
 
-function rebuildLiveData(games,form){
+function rebuildLiveData(games,form){ ERRMODEL=null;
   const acc={};
   games.forEach(g=>{[['home','away'],['away','home']].forEach(([s,o])=>{
     const me=g[s],op=g[o];if(!me.abbr)return;
